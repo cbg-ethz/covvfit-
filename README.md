@@ -1,2 +1,4 @@
-# covvfit-
-fitness estimates of SARS-CoV-2 variants
+# covvfit
+Fitness estimates of SARS-CoV-2 variants.
+
+

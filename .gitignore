@@ -1,3 +1,17 @@
+# Notebooks by default should not be uploaded (use Quarto Markdown as an alternative)
+*.nb
+*.ipynb
+
+# Data and plots
+*.csv
+*.jpg
+*.jpeg
+*.npy
+*.npz
+*.pdf
+*.png
+*.zip
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

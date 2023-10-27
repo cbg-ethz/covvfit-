@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "covvfit"
+version = "0.1.0"
+description = ""
+authors = ["David Dreifuss <david.dreifuss@bsse.ethz.ch>", "Paweł Czyż <pczyz@protonmail.com>"]
+readme = "README.md"
+packages = [{include = "covvfit", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
