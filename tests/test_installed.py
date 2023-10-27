@@ -1,2 +1,5 @@
+import covvfit
+
+
 def test_imports() -> None:
-    pass
+    assert isinstance(covvfit.VERSION, str)
