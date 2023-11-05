@@ -12,6 +12,9 @@ numpy = "^1.25"
 matplotlib = "^3.8.0"
 pymc = "^5.9.1"
 scipy = "^1.11.3"
+jax = "^0.4.20"
+jaxlib = "^0.4.20"
+diffrax = "^0.4.1"
 
 
 [tool.poetry.group.dev.dependencies]
