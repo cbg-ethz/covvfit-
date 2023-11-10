@@ -4,7 +4,6 @@ import pandas as pd
 import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
 
-__all__ = ["colors_covsp", "make_legend", "num_to_date"]
 
 colors_covsp = {
     "B.1.1.7": "#D16666",
