@@ -1,0 +1,109 @@
+## Experimentation with multinomial model
+
+```{python}
+import pandas as pd
+import pymc as pm
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+import arviz as az
+import statsmodels.api as sm
+
+import matplotlib.dates as mdates
+import matplotlib.ticker as ticker
+import matplotlib.cm as cm
+
+import covvfit as cv
+```
+
+Load the data:
+```{python}
+data_path = '../private/data/robust_deconv2_noisy13.csv'
+
+variants = [
+#     'B.1.1.7', 'B.1.351', 'P.1', 'undetermined',
+    'B.1.617.2', 'BA.1', 'BA.2', 'BA.4', 'BA.5', 'BA.2.75',
+    'BQ.1.1', 'XBB.1.5', 'XBB.1.9', 'XBB.1.16', 'XBB.2.3', 'EG.5', "BA.2.86"
+]
+
+cities = ['Lugano (TI)', 'Zürich (ZH)', 'Chur (GR)', 'Altenrhein (SG)',
+       'Laupen (BE)', 'Genève (GE)', 'Basel (BS)', 'Porrentruy (JU)',
+       'Lausanne (VD)', 'Bern (BE)', 'Luzern (LU)', 'Solothurn (SO)',
+       'Neuchâtel (NE)', 'Schwyz (SZ)']
+
+
+data = cv.load_data(data_path)
+data2 = cv.preprocess_df(data, cities, variants, date_min='2021-11-01')
+
+ts_lst, ys_lst = cv.make_data_list(data2, cities, variants)
+```
+
+
+Let's load one city only:
+```{python}
+ys = ys_lst[1]
+ys = ys / ys.sum(0)
+ts = ts_lst[1]
+```
+
+Now we can create model for this one city:
+```{python}
+from pymc.distributions.dist_math import factln
+
+# model for just one city
+def create_model5(
+    ts_lst,
+    ys_lst,
+    n=1.0,
+    coords={
+#         "cities":cities,
+        "variants":variants,
+    },
+    n_pred=60
+):
+    ts_pred = np.arange(n_pred) + ts_lst.max()
+    with pm.Model(coords=coords) as model:
+#         sigma_var = pm.InverseGamma("sigma", alpha=2.1, beta=0.015, dims=["cities","variants"])
+        midpoint_var = pm.Normal("midpoint", mu=0.0, sigma=500.0, dims="variants")
+#         midpoint_sig = pm.InverseGamma("midpoint_sig", alpha=7.0, beta=60.0)
+        rate_var = pm.Gamma("rate", mu=0.15, sigma=0.1, dims="variants")
+#         rate_sig = pm.InverseGamma("rate_sigma", alpha=2.0005, beta=0.05)
+        n_eff_inv = pm.InverseGamma("n_eff_inv", alpha=20.0, beta=2.0)   
+        n_eff = pm.Deterministic("n_eff", 1/n_eff_inv)
+#         n_eff = pm.TruncatedNormal("n_eff", mu=10, sigma=10, lower=1.0)
+#         n_eff = pm.Gamma("n_eff", alpha=1000, beta=100)
+        
+        # Kaan's trick to avoid overflows
+        def softmax(x, rates, midpoints):
+            E = rates[:, None] * (x - midpoints[:, None])
+            E_max = E.max(axis=0)
+            un_norm = pm.math.exp(E - E_max)
+            return un_norm / (pm.math.sum(un_norm, axis=0))
+        
+        ys_smooth = pm.Deterministic(f"ys_ideal",softmax(ts_lst, rate_var, midpoint_var), dims="variants")
+        ys_pred = pm.Deterministic(f"ys_pred",softmax(ts_pred, rate_var, midpoint_var), dims="variants")
+#         ys_wiggly = pm.Beta(f"ys_wiggly", mu=ys_smooth, nu=n_eff)
+        
+        # make Multinom/n likelihood
+        def log_likelihood(y, p, n):
+            return n*pm.math.sum(y * pm.math.log(p) - factln(n*y), axis=0) + pm.math.log(n) + factln(n)
+
+        ys_noisy = pm.DensityDist(
+                        f"ys_noisy",
+                        ys_smooth,
+                        n_eff,
+                        logp=log_likelihood,
+                        observed=ys_lst,
+        )
+      
+    return model
+
+
+
+with create_model(ts, ys, coords={
+        "variants":variants,
+    }):
+    idata_posterior = pm.sample(random_seed=65, chains=2, tune=500, draws=500)
+```
+
