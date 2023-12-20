@@ -16,7 +16,10 @@ def calculate_linear(
     m = midpoints.reshape(shape)
     g = growths.reshape(shape)
 
-    return ts[..., None] * g + m
+    return (ts[..., None] - m) * g
+
+
+_Float = float | Float[Array, " "]
 
 
 def calculate_logps(
@@ -32,11 +35,10 @@ def calculate_logps(
     return jax.nn.log_softmax(linears, axis=-1)
 
 
-
 def loss(
     y: Float[Array, "*batch variants"],
     logp: Float[Array, "*batch variants"],
-    n: float | Float,
+    n: _Float,
 ) -> Float[Array, " *batch"]:
     # TODO(Pawel): How to include n here?
     return jnp.sum(n * y * logp, axis=-1)
@@ -45,7 +47,7 @@ def loss(
 class CityData(NamedTuple):
     ts: Float[Array, " timepoints"]
     ys: Float[Array, "timepoints variants"]
-    n: float | Float
+    n: _Float
 
 
 _ThetaType = Float[Array, "(cities+1)*(variants-1)"]
@@ -55,25 +57,28 @@ def total_loss(
     theta: _ThetaType,
     data: tuple[CityData, ...],
 ) -> Float[Array, " "]:
-    
-
+    raise NotImplementedError
 
 
 def construct_theta(
-    growths: Float[Array, " variants-1"],
-    midpoints: Float[ArithmeticError, "cities variants-1"],
+    relative_growths: Float[Array, " variants-1"],
+    relative_midpoints: Float[ArithmeticError, "cities variants-1"],
 ) -> _ThetaType:
-    pass
+    flattened_midpoints = relative_midpoints.flatten()
+    theta = jnp.concatenate([relative_growths, flattened_midpoints])
+    return theta
 
 
-def get_growths(
-    theta: _ThetaType
-) -> Float[Array, " variants-1"]:
-    pass
-
-
-def get_midpoints(
+def get_relative_growths(
     theta: _ThetaType,
-) -> Float[Array, "cities variants-1"]:
-    pass
+    n_variants: int,
+) -> Float[Array, " variants-1"]:
+    return theta[: n_variants - 1]
 
+
+def get_relative_midpoints(
+    theta: _ThetaType,
+    n_variants: int,
+) -> Float[Array, "cities variants-1"]:
+    n_cities = theta.shape[0] // (n_variants - 1) - 1
+    return theta[n_variants - 1 :].reshape(n_cities, n_variants - 1)
