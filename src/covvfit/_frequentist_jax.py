@@ -1,5 +1,5 @@
 """Frequentist fitting functions powered by JAX."""
-from typing import NamedTuple
+from typing import Callable, NamedTuple, Sequence
 
 import jax
 import jax.numpy as jnp
@@ -40,8 +40,10 @@ def loss(
     logp: Float[Array, "*batch variants"],
     n: _Float,
 ) -> Float[Array, " *batch"]:
-    # TODO(Pawel): How to include n here?
-    return jnp.sum(n * y * logp, axis=-1)
+    # Note: we want loss (lower is better), rather than
+    # total loglikelihood (higher is better),
+    # so we add the negative sign.
+    return -jnp.sum(n * y * logp, axis=-1)
 
 
 class CityData(NamedTuple):
@@ -53,11 +55,43 @@ class CityData(NamedTuple):
 _ThetaType = Float[Array, "(cities+1)*(variants-1)"]
 
 
-def total_loss(
-    theta: _ThetaType,
-    data: tuple[CityData, ...],
-) -> Float[Array, " "]:
-    raise NotImplementedError
+def _add_first_variant(vec: Float[Array, " variants-1"]) -> Float[Array, " variants"]:
+    return jnp.concatenate([jnp.zeros_like(vec)[0:1], vec])
+
+
+def construct_total_loss(
+    cities: Sequence[CityData],
+) -> Callable[[_ThetaType], _Float]:
+    cities = tuple(cities)
+    n_variants = cities[0].ys.shape[-1]
+    for city in cities:
+        assert (
+            city.ys.shape[-1] == n_variants
+        ), "All cities must have the same number of variants"
+
+    def total_loss(theta: _ThetaType) -> _Float:
+        rel_growths = get_relative_growths(theta, n_variants=n_variants)
+        rel_midpoints = get_relative_midpoints(theta, n_variants=n_variants)
+
+        growths = _add_first_variant(rel_growths)
+        return jnp.sum(
+            jnp.asarray(
+                [
+                    loss(
+                        y=city.ys,
+                        n=city.n,
+                        logp=calculate_logps(
+                            ts=city.ts,
+                            midpoints=_add_first_variant(midp),
+                            growths=growths,
+                        ),
+                    ).sum()
+                    for midp, city in zip(rel_midpoints, cities)
+                ]
+            )
+        )
+
+    return total_loss
 
 
 def construct_theta(
