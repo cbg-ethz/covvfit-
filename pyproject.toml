@@ -27,6 +27,11 @@ mkdocstrings = {extras = ["python"], version = "^0.23.0"}
 mkdocs = "^1.5.3"
 mkdocs-material = "^9.4.7"
 
+[tool.ruff]
+select = ["E", "F", "I001"]
+ignore = ["E721", "E731", "F722"]
+ignore-init-module-imports = true
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
