@@ -3,8 +3,7 @@ from typing import Callable, NamedTuple, Sequence
 
 import jax
 import jax.numpy as jnp
-
-from jaxtyping import Float, Array
+from jaxtyping import Array, Float
 
 
 def calculate_linear(
@@ -55,7 +54,7 @@ class CityData(NamedTuple):
 _ThetaType = Float[Array, "(cities+1)*(variants-1)"]
 
 
-def _add_first_variant(vec: Float[Array, " variants-1"]) -> Float[Array, " variants"]:
+def add_first_variant(vec: Float[Array, " variants-1"]) -> Float[Array, " variants"]:
     return jnp.concatenate([jnp.zeros_like(vec)[0:1], vec])
 
 
@@ -73,7 +72,7 @@ def construct_total_loss(
         rel_growths = get_relative_growths(theta, n_variants=n_variants)
         rel_midpoints = get_relative_midpoints(theta, n_variants=n_variants)
 
-        growths = _add_first_variant(rel_growths)
+        growths = add_first_variant(rel_growths)
         return jnp.sum(
             jnp.asarray(
                 [
@@ -82,7 +81,7 @@ def construct_total_loss(
                         n=city.n,
                         logp=calculate_logps(
                             ts=city.ts,
-                            midpoints=_add_first_variant(midp),
+                            midpoints=add_first_variant(midp),
                             growths=growths,
                         ),
                     ).sum()
@@ -96,7 +95,7 @@ def construct_total_loss(
 
 def construct_theta(
     relative_growths: Float[Array, " variants-1"],
-    relative_midpoints: Float[ArithmeticError, "cities variants-1"],
+    relative_midpoints: Float[Array, "cities variants-1"],
 ) -> _ThetaType:
     flattened_midpoints = relative_midpoints.flatten()
     theta = jnp.concatenate([relative_growths, flattened_midpoints])
@@ -116,3 +115,92 @@ def get_relative_midpoints(
 ) -> Float[Array, "cities variants-1"]:
     n_cities = theta.shape[0] // (n_variants - 1) - 1
     return theta[n_variants - 1 :].reshape(n_cities, n_variants - 1)
+
+
+class StandardErrorsMultipliers(NamedTuple):
+    CI95: float = 1.96
+
+    @staticmethod
+    def convert(confidence: float) -> float:
+        """Calculates the multiplier for a given confidence level.
+
+        Example:
+            StandardErrorsMultipliers.convert(0.95)  # 1.9599
+        """
+        return float(jax.scipy.stats.norm.ppf((1 + confidence) / 2))
+
+
+def get_standard_errors(
+    jacobian: Float[Array, "*output_shape n_inputs"],
+    covariance: Float[Array, "n_inputs n_inputs"],
+) -> Float[Array, " *output_shape"]:
+    """Delta method to calculate standard errors of a function
+    from `n_inputs` to `output_shape`.
+
+    Args:
+        jacobian: Jacobian of the function to be fitted, shape (output_shape, n_inputs)
+        covariance: Covariance matrix of the inputs, shape (n_inputs, n_inputs)
+
+    Returns:
+        Standard errors of the fitted parameters, shape (output_shape,)
+
+    Note:
+        `output_shape` can be a vector, in which case the output is a vector
+        of standard errors or a tensor of any other shape,
+        in which case the output is a tensor of standard errors for each output
+        coordinate.
+    """
+    return jnp.sqrt(jnp.einsum("...L,KL,...K -> ...", jacobian, covariance, jacobian))
+
+
+def triangular_mask(n_variants, valid_value: float = 0, masked_value: float = jnp.nan):
+    """Creates a triangular mask. Helpful for masking out redundant parameters
+    in anti-symmetric matrices."""
+    a = jnp.arange(n_variants)
+    nan_mask = jnp.where(a[:, None] < a[None, :], valid_value, masked_value)
+    return nan_mask
+
+
+def get_relative_advantages(theta, n_variants: int):
+    # Shape (n_variants-1,) describing relative advantages
+    # over the 0th variant
+    rel_growths = get_relative_growths(theta, n_variants=n_variants)
+
+    growths = jnp.concatenate((jnp.zeros(1, dtype=rel_growths.dtype), rel_growths))
+    diffs = growths[None, :] - growths[:, None]
+    return diffs
+
+
+def get_softmax_predictions(
+    theta: _ThetaType, n_variants: int, city_index: int, ts: Float[Array, " timepoints"]
+) -> Float[Array, "timepoints variants"]:
+    rel_growths = get_relative_growths(theta, n_variants=n_variants)
+    growths = add_first_variant(rel_growths)
+
+    rel_midpoints = get_relative_midpoints(theta, n_variants=n_variants)
+    midpoints = add_first_variant(rel_midpoints[city_index])
+
+    y_linear = calculate_linear(
+        ts=ts,
+        midpoints=midpoints,
+        growths=growths,
+    )
+
+    y_softmax = jax.nn.softmax(y_linear, axis=-1)
+    return y_softmax
+
+
+def get_logit_predictions(
+    theta: _ThetaType,
+    n_variants: int,
+    city_index: int,
+    ts: Float[Array, " timepoints"],
+) -> Float[Array, "timepoints variants"]:
+    return jax.scipy.special.logit(
+        get_softmax_predictions(
+            theta=theta,
+            n_variants=n_variants,
+            city_index=city_index,
+            ts=ts,
+        )
+    )
