@@ -63,6 +63,7 @@ def add_first_variant(vec: Float[Array, " variants-1"]) -> Float[Array, " varian
 
 def construct_total_loss(
     cities: Sequence[CityData],
+    average_loss: bool = False,
 ) -> Callable[[_ThetaType], _Float]:
     cities = tuple(cities)
     n_variants = cities[0].ys.shape[-1]
@@ -70,6 +71,11 @@ def construct_total_loss(
         assert (
             city.ys.shape[-1] == n_variants
         ), "All cities must have the same number of variants"
+
+    if average_loss:
+        n_points_total = 1.0 * sum(city.ts.shape[0] for city in cities)
+    else:
+        n_points_total = 1.0
 
     def total_loss(theta: _ThetaType) -> _Float:
         rel_growths = get_relative_growths(theta, n_variants=n_variants)
@@ -91,7 +97,7 @@ def construct_total_loss(
                     for midp, city in zip(rel_midpoints, cities)
                 ]
             )
-        )
+        ) / n_points_total
 
     return total_loss
 
