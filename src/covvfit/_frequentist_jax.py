@@ -217,13 +217,20 @@ class OptimizeMultiResult:
     runs: list[optimize.OptimizeResult]
 
 
+def construct_theta0(
+    n_cities: int,
+    n_variants: int,
+) -> _ThetaType:
+    return np.zeros((n_cities * (n_variants - 1) + n_variants - 1,), dtype=float)
+
+
 def jax_multistart_minimize(
     loss_fn,
     theta0: np.ndarray,
     n_starts: int = 10,
     random_seed: int = 42,
     maxiter: int = 10_000,
-):
+) -> OptimizeMultiResult:
     # Create loss function and its gradient
     _loss_grad_fun = jax.jit(jax.value_and_grad(loss_fn))
 
