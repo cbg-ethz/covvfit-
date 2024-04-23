@@ -250,7 +250,7 @@ def jax_multistart_minimize(
     for i in range(n_starts):
         starting_point = theta0 + i * rng.normal(size=theta0.shape)
         sol = optimize.minimize(
-            loss_grad_fun, jac=True, x0=starting_point, options={"maxiter": maxiter}
+            loss_grad_fun, jac=True, x0=starting_point, options={"maxiter": maxiter}, bounds=[(0,None)]*7+[(None, None)] * (theta0.shape[0]-7)
         )
         solutions.append(sol)
 
