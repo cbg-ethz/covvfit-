@@ -10,12 +10,14 @@ packages = [{include = "covvfit", from = "src"}]
 python = ">=3.10,<3.12"
 numpy = "^1.25"
 matplotlib = "^3.8.0"
-pymc = "^5.9.1"
 scipy = "^1.11.3"
 jax = "^0.4.20"
 jaxlib = "^0.4.20"
 diffrax = "^0.4.1"
+pymc = "==5.3.0"
 
+[tool.poetry.group.dev]
+optional = true
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.3"
@@ -26,6 +28,15 @@ pyright = "^1.1.333"
 mkdocstrings = {extras = ["python"], version = "^0.23.0"}
 mkdocs = "^1.5.3"
 mkdocs-material = "^9.4.7"
+jupytext = "^1.16.1"
+jupyterlab = "^4.1.6"
+
+[tool.ruff]
+exclude = [".venv"]
+ignore = ["E501"]
+
+[tool.jupytext]
+formats = "ipynb,py:percent"
 
 [build-system]
 requires = ["poetry-core"]

@@ -1,25 +1,35 @@
 """utilities to fit frequentist models"""
-import numpy as np
+
 import pymc as pm
+
+import numpy as np
+
+
+__all__ = [
+    "create_model_fixed",
+    "softmax",
+    "softmax_1",
+    "fitted_values",
+    "pred_values",
+    "compute_overdispersion",
+    "make_jacobian",
+    "project_se",
+    "make_ratediff_confints",
+    "make_fitness_confints",
+]
 
 
 def create_model_fixed(
     ts_lst,
     ys_lst,
-    n: float = 1.0,
-    coords: dict | None = None,
-) -> pm.Model:
-    """Creates a fixed effect model
-    with varying intercepts and one rate vector."""
-    if n < 0:
-        raise ValueError("n must be positive")
-
-    if coords is None:
-        coords = {
-            "cities": [],
-            "variants": [],
-        }
-
+    n=1.0,
+    coords={
+        "cities": [],
+        "variants": [],
+    },
+    n_pred=60,
+):
+    """function to create a fixed effect model with varying intercepts and one rate vector"""
     with pm.Model(coords=coords) as model:
         midpoint_var = pm.Normal(
             "midpoint", mu=0.0, sigma=1500.0, dims=["cities", "variants"]
@@ -30,10 +40,8 @@ def create_model_fixed(
         def softmax_1(x, rates, midpoints):
             E = rates[:, None] * x + midpoints[:, None]
             E_max = E.max(axis=0)
-            un_norm = pm.math.exp(E - E_max)  # pyright: ignore
-            return un_norm / (
-                pm.math.exp(-E_max) + pm.math.sum(un_norm, axis=0)  # pyright: ignore
-            )
+            un_norm = pm.math.exp(E - E_max)
+            return un_norm / (pm.math.exp(-E_max) + pm.math.sum(un_norm, axis=0))
 
         ys_smooth = [
             softmax_1(ts_lst[i], rate_var, midpoint_var[i, :])
@@ -42,7 +50,8 @@ def create_model_fixed(
 
         # make Multinom/n likelihood
         def log_likelihood(y, p, n):
-            return n * pm.math.sum(y * pm.math.log(p), axis=0)  # pyright: ignore
+            # return n*pm.math.sum(y * pm.math.log(p), axis=0) + n*(1-pm.math.sum(y, axis=0))*pm.math.log(1-pm.math.sum(p, axis=0))
+            return n * pm.math.sum(y * pm.math.log(p), axis=0)
 
         [
             pm.DensityDist(
@@ -66,8 +75,7 @@ def softmax(E):
 
 
 def softmax_1(x, rates, midpoints):
-    """Softmax with the trick to avoid overflows,
-    assuming an additional class with rate fixed to 0"""
+    """softmax with the trick to avoid overflows, assuming an additional class with rate fixed to 0"""
     E = rates[:, None] * x + midpoints[:, None]
     E_max = E.max(axis=0)
     un_norm = np.exp(E - E_max)
@@ -130,23 +138,9 @@ def project_se(rate, midpoint, t, model_hessian_inv, overdisp=1.0):
     return np.sqrt(np.diag(jacobian.dot(model_hessian_inv).dot(jacobian.T))) * overdisp
 
 
-def make_ratediff_confints(
-    t_rate,
-    model_hessian_fixed,
-    p_variants: int,
-    overdisp_fixed: float = 1.0,
-    g: float = 7.0,
-):
-    """Projects the standard errors on the rate difference scale,
-    computes Wald confidence intervals, and transform to fitness scale"""
-    # TODO(Pawel, David): p_variants was not an argument before, so I added it naively
-    #  but it should be checked if it is correct.
-    #  Feel free to remove this exception once you take a look :)
-    raise NotImplementedError(
-        "The formulae with p_variants need to be "
-        "validated before this function can be used!"
-    )
-
+def make_ratediff_confints(t_rate, model_hessian_fixed, overdisp_fixed=1.0, g=7.0):
+    """project the standard errors on the rate difference scale, compute wald confints, transform to fitness scale"""
+    p_variants = t_rate.shape[0]
     t_hess_inv = np.linalg.inv(model_hessian_fixed)[-p_variants:, -p_variants:]
 
     rate_diff = np.array([[j - i for i in t_rate] for j in t_rate])
