@@ -22,14 +22,19 @@ __all__ = [
 def create_model_fixed(
     ts_lst,
     ys_lst,
-    n=1.0,
-    coords={
-        "cities": [],
-        "variants": [],
-    },
-    n_pred=60,
-):
-    """function to create a fixed effect model with varying intercepts and one rate vector"""
+    n: float = 1.0,
+    coords: dict | None = None,
+) -> pm.Model:
+    """Creates a fixed effect model with varying intercepts and one rate vector."""
+    if n < 0:
+        raise ValueError("n must be positive")
+
+    if coords is None:
+        coords = {
+            "cities": [],
+            "variants": [],
+        }
+
     with pm.Model(coords=coords) as model:
         midpoint_var = pm.Normal(
             "midpoint", mu=0.0, sigma=1500.0, dims=["cities", "variants"]
