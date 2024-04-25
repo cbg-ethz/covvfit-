@@ -17,14 +17,17 @@ import covvfit._frequentist as freq
 import covvfit._frequentist_jax as fj
 import covvfit._preprocess_abundances as prec
 import covvfit.plotting._timeseries as plot_ts
+import jax
 import jax.nn as nn
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import numpy as np
+import numpyro
 import numpyro.distributions as dist
 import pandas as pd
 import pymc as pm
+from numpyro.infer import MCMC, NUTS
 from scipy.special import expit
 
 variants_full = [
@@ -111,8 +114,6 @@ n_variants = len(variants2)
 
 
 # %%
-
-
 loss_loglike = fj.construct_total_loss(data, average_loss=False)
 
 
@@ -149,6 +150,67 @@ solution = fj.jax_multistart_minimize(
 
 print(fj.get_relative_growths(optim_to_param(solution.best.x), n_variants=n_variants))
 print(solution.best.fun)
+
+
+# %%
+def model(mu: float = 0.15, sigma: float = 0.1):
+    midpoints = numpyro.sample(
+        "midpoints",
+        dist.Normal(
+            jnp.zeros_like(fj.get_relative_midpoints(theta0, n_variants=n_variants)),
+            100,
+        ),
+    )
+
+    alpha = jnp.square(mu / sigma)
+    beta = mu / jnp.square(sigma)
+    growths = numpyro.sample(
+        "growths",
+        dist.Gamma(
+            alpha
+            * jnp.ones_like(fj.get_relative_growths(theta0, n_variants=n_variants)),
+            beta,
+        ),
+    )
+
+    # growths = numpyro.sample("growths", dist.TruncatedNormal(mu * jnp.ones_like(fj.get_relative_growths(theta0, n_variants=n_variants)), sigma, low=0.01, high=1.0))
+
+    x = fj.construct_theta(relative_growths=growths, relative_midpoints=midpoints)
+    numpyro.factor("loglikelihood", -loss_loglike(x))
+
+
+mcmc = MCMC(NUTS(model), num_warmup=1_000, num_samples=1_000, num_chains=4)
+mcmc.run(jax.random.PRNGKey(0))
+
+# %%
+mcmc.print_summary()
+
+# %%
+
+rng = np.random.default_rng(42)
+
+mu = 0.15
+sigma = 0.1
+
+alpha = jnp.square(mu / sigma)
+beta = mu / jnp.square(sigma)
+
+samples = rng.gamma(alpha, 1 / beta, size=10_000)
+
+print(np.mean(samples))
+print(np.std(samples))
+
+plt.hist(samples, bins=np.linspace(0, 0.5, 50), color="salmon", alpha=0.4, density=True)
+plt.hist(
+    mcmc.get_samples()["growths"][:, -1],
+    bins=np.linspace(0, 0.5, 50),
+    color="darkblue",
+    alpha=0.4,
+    density=True,
+)
+
+
+np.mean(samples < 0.01)
 
 # %%
 ## This model takes into account the complement of the variants to be monitored, and sets its fitness to zero
