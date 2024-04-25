@@ -36,15 +36,13 @@ jupyterlab = "^4.1.6"
 
 [tool.ruff]
 exclude = [".venv"]
-ignore = ["E501"]
+select = ["E", "F", "I001"]
+ignore = ["E721", "E731", "F722", "E501"]
+# ignore-init-module-imports = true
 
 [tool.jupytext]
 formats = "ipynb,py:percent"
 
-[tool.ruff]
-select = ["E", "F", "I001"]
-ignore = ["E721", "E731", "F722"]
-ignore-init-module-imports = true
 
 [build-system]
 requires = ["poetry-core"]
