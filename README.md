@@ -17,7 +17,7 @@ Fitness estimates of SARS-CoV-2 variants.
 ### Developers
 Create a new environment, e.g., using [Micromamba](https://mamba.readthedocs.io/en/latest/user_guide/micromamba.html):
 ```bash
-$ micromamba create -n covvfit -c conda-forge python=3.10
+$ micromamba create -n covvfit -c conda-forge python=3.11
 ```
 
 Then, install the package. 
