@@ -82,22 +82,25 @@ def construct_total_loss(
         rel_midpoints = get_relative_midpoints(theta, n_variants=n_variants)
 
         growths = add_first_variant(rel_growths)
-        return jnp.sum(
-            jnp.asarray(
-                [
-                    loss(
-                        y=city.ys,
-                        n=city.n,
-                        logp=calculate_logps(
-                            ts=city.ts,
-                            midpoints=add_first_variant(midp),
-                            growths=growths,
-                        ),
-                    ).sum()
-                    for midp, city in zip(rel_midpoints, cities)
-                ]
+        return (
+            jnp.sum(
+                jnp.asarray(
+                    [
+                        loss(
+                            y=city.ys,
+                            n=city.n,
+                            logp=calculate_logps(
+                                ts=city.ts,
+                                midpoints=add_first_variant(midp),
+                                growths=growths,
+                            ),
+                        ).sum()
+                        for midp, city in zip(rel_midpoints, cities)
+                    ]
+                )
             )
-        ) / n_points_total
+            / n_points_total
+        )
 
     return total_loss
 
@@ -247,10 +250,10 @@ def jax_multistart_minimize(
     solutions: list[optimize.OptimizeResult] = []
     rng = np.random.default_rng(random_seed)
 
-    for i in range(n_starts):
-        starting_point = theta0 + i * rng.normal(size=theta0.shape)
+    for i in range(1, n_starts + 1):
+        starting_point = theta0 + (i / n_starts) * rng.normal(size=theta0.shape)
         sol = optimize.minimize(
-            loss_grad_fun, jac=True, x0=starting_point, options={"maxiter": maxiter}, bounds=[(0,None)]*7+[(None, None)] * (theta0.shape[0]-7)
+            loss_grad_fun, jac=True, x0=starting_point, options={"maxiter": maxiter}
         )
         solutions.append(sol)
 
