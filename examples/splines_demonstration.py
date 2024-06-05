@@ -1,9 +1,8 @@
 """Bayesian regression using B-splines."""
+import covvfit as cv
 import matplotlib.pyplot as plt
 import numpy as np
 import pymc as pm
-
-import covvfit as cv
 
 
 def create_model(

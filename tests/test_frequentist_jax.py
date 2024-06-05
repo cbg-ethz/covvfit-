@@ -1,9 +1,7 @@
-import pytest
-import jax
-
-import numpy.testing as npt
-
 import covvfit._frequentist_jax as fj
+import jax
+import numpy.testing as npt
+import pytest
 
 
 @pytest.mark.parametrize("n_cities", [1, 5, 12])
