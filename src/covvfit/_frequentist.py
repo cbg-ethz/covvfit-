@@ -1,9 +1,7 @@
 """utilities to fit frequentist models"""
 
-import pymc as pm
-
 import numpy as np
-
+import pymc as pm
 
 __all__ = [
     "create_model_fixed",

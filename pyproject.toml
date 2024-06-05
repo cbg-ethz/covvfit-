@@ -18,6 +18,7 @@ numpy = "==1.24.3"
 pytensor = "==2.11.1"
 pymc = "==5.3.0"
 seaborn = "^0.13.2"
+numpyro = "^0.14.0"
 
 [tool.poetry.group.dev]
 optional = true
@@ -36,10 +37,13 @@ jupyterlab = "^4.1.6"
 
 [tool.ruff]
 exclude = [".venv"]
-ignore = ["E501"]
+select = ["E", "F", "I001"]
+ignore = ["E721", "E731", "F722", "E501"]
+# ignore-init-module-imports = true
 
 [tool.jupytext]
 formats = "ipynb,py:percent"
+
 
 [build-system]
 requires = ["poetry-core"]
