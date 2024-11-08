@@ -18,6 +18,8 @@ generated/
 *.png
 *.zip
 
+.DS_Store
+
 # Poetry lock file
 poetry.lock
 
