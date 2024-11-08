@@ -13,21 +13,15 @@
 # ---
 
 # %%
-import pandas as pd
-import pymc as pm
-
-import numpy as np
-
-import matplotlib.ticker as ticker
-import matplotlib.pyplot as plt
-
-from scipy.special import expit
-
-
 import covvfit._frequentist as freq
 import covvfit._preprocess_abundances as prec
 import covvfit.plotting._timeseries as plot_ts
-
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+import numpy as np
+import pandas as pd
+import pymc as pm
+from scipy.special import expit
 
 variants_full = [
     "B.1.1.7",
