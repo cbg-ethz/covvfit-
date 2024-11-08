@@ -37,6 +37,19 @@ def calculate_logps(
     return jax.nn.log_softmax(linears, axis=-1)
 
 
+def calculate_proportions(
+    ts: Float[Array, " *batch"],
+    midpoints: Float[Array, " variants"],
+    growths: Float[Array, " variants"],
+) -> Float[Array, "*batch variants"]:
+    linear = calculate_linear(
+        ts=ts,
+        midpoints=midpoints,
+        growths=growths,
+    )
+    return jax.nn.softmax(linear, axis=-1)
+
+
 def loss(
     y: Float[Array, "*batch variants"],
     logp: Float[Array, "*batch variants"],
