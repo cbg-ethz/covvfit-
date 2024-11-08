@@ -14,23 +14,15 @@
 # ---
 
 # +
-import pandas as pd
-import pymc as pm
-
-import numpy as np
-
-import matplotlib.ticker as ticker
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-from scipy.special import expit
-from scipy.stats import norm
-
-import yaml
-
 import covvfit._frequentist as freq
 import covvfit._preprocess_abundances as prec
 import covvfit.plotting._timeseries as plot_ts
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+import numpy as np
+import pandas as pd
+import pymc as pm
+import yaml
 
 # -
 
@@ -41,32 +33,37 @@ DATA_PATH = "../../LolliPop/lollipop_test_noisy/deconvolved.csv"
 data = pd.read_csv(DATA_PATH, sep="\t")
 data.head()
 
-data_wide = data.pivot_table(index=['date', 'location'], columns='variant', values='proportion', fill_value=0).reset_index()
-data_wide = data_wide.rename(columns={'date': 'time', 'location': 'city'})
+data_wide = data.pivot_table(
+    index=["date", "location"], columns="variant", values="proportion", fill_value=0
+).reset_index()
+data_wide = data_wide.rename(columns={"date": "time", "location": "city"})
 data_wide.head()
 
 # +
 ## Set limit times for modeling
 
-max_date = pd.to_datetime(data_wide['time']).max()
+max_date = pd.to_datetime(data_wide["time"]).max()
 delta_time = pd.Timedelta(days=240)
-start_date =  max_date - delta_time
+start_date = max_date - delta_time
 
 # +
 # Path to the YAML file
 var_dates_yaml = "../../LolliPop/lollipop_test_noisy/var_dates.yaml"
 
 # Load the YAML file
-with open(var_dates_yaml, 'r') as file:
+with open(var_dates_yaml, "r") as file:
     var_dates_data = yaml.safe_load(file)
 
 # Access the var_dates data
-var_dates = var_dates_data['var_dates']
+var_dates = var_dates_data["var_dates"]
 
 
 # +
 # Convert the keys to datetime objects for comparison
-var_dates_parsed = {pd.to_datetime(date): variants for date, variants in var_dates.items()}
+var_dates_parsed = {
+    pd.to_datetime(date): variants for date, variants in var_dates.items()
+}
+
 
 # Function to find the latest matching date in var_dates
 def match_date(start_date):
@@ -74,11 +71,10 @@ def match_date(start_date):
     closest_date = max(date for date in var_dates_parsed if date <= start_date)
     return closest_date, var_dates_parsed[closest_date]
 
+
 variants_full = match_date(start_date + delta_time)[1]
 
-variants = ['KP.2',
-            'KP.3',
-            'XEC']
+variants = ["KP.2", "KP.3", "XEC"]
 
 variants_other = [i for i in variants_full if i not in variants]
 # -
@@ -270,12 +266,12 @@ make_confidence_bands = freq.make_confidence_bands
 plot_fit = plot_ts.plot_fit
 plot_complement = plot_ts.plot_complement
 plot_data = plot_ts.plot_data
-plot_confidence_bands = plot_ts.plot_confidence_bands    
+plot_confidence_bands = plot_ts.plot_confidence_bands
 
 # ## Plot
 
 # +
-colors_covsp = plot_ts.colors_covsp 
+colors_covsp = plot_ts.colors_covsp
 colors = [colors_covsp[var] for var in variants]
 fig, axes_tot = plt.subplots(4, 2, figsize=(15, 10))
 axes_flat = axes_tot.flatten()
@@ -291,18 +287,30 @@ for i, city in enumerate(cities):
     # plot raw deconvolved values
     plot_data(ax, ts_lst[i], ys_lst2[i], variants, colors)
     # make confidence bands and plot them
-    conf_bands = make_confidence_bands(ts_lst[i], y_fit_lst[i],
-                                       model_hessian_inv, i, model_map_fixed["rate"],
-                                       model_map_fixed["midpoint"][i, :],
-                                       overdisp_list[i])
+    conf_bands = make_confidence_bands(
+        ts_lst[i],
+        y_fit_lst[i],
+        model_hessian_inv,
+        i,
+        model_map_fixed["rate"],
+        model_map_fixed["midpoint"][i, :],
+        overdisp_list[i],
+    )
     plot_confidence_bands(ax, ts_lst[i], conf_bands, variants, colors)
-    
-    conf_bands_pred = make_confidence_bands(ts_pred_lst[i], y_pred_lst[i],
-                                       model_hessian_inv, i, model_map_fixed["rate"],
-                                       model_map_fixed["midpoint"][i, :],
-                                       overdisp_list[i])
-    plot_confidence_bands(ax, ts_pred_lst[i], conf_bands_pred, variants, colors, alpha=0.1)
-    
+
+    conf_bands_pred = make_confidence_bands(
+        ts_pred_lst[i],
+        y_pred_lst[i],
+        model_hessian_inv,
+        i,
+        model_map_fixed["rate"],
+        model_map_fixed["midpoint"][i, :],
+        overdisp_list[i],
+    )
+    plot_confidence_bands(
+        ax, ts_pred_lst[i], conf_bands_pred, variants, colors, alpha=0.1
+    )
+
     # format axes and title
     date_formatter = ticker.FuncFormatter(plot_ts.num_to_date)
     ax.xaxis.set_major_formatter(date_formatter)
