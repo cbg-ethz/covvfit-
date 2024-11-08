@@ -7,7 +7,7 @@ from scipy.stats import norm
 
 import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
-
+import pandas as pd
 
 colors_covsp = {
     "B.1.1.7": "#D16666",

@@ -1,8 +1,7 @@
 import jax
-import jax.random as jrandom
 import jax.numpy as jnp
+import jax.random as jrandom
 from diffrax import (
-    diffeqsolve,
     ControlTerm,
     Euler,
     MultiTerm,
@@ -10,6 +9,7 @@ from diffrax import (
     SaveAt,
     Solution,
     VirtualBrownianTree,
+    diffeqsolve,
 )
 
 

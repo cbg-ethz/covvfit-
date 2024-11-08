@@ -1,8 +1,7 @@
-from covvfit._splines import create_spline_matrix
-from covvfit._preprocess_abundances import make_data_list, preprocess_df, load_data
-
 import covvfit._frequentist as freq
 import covvfit.plotting as plot
+from covvfit._preprocess_abundances import load_data, make_data_list, preprocess_df
+from covvfit._splines import create_spline_matrix
 
 VERSION = "0.1.0"
 

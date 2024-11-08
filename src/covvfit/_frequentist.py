@@ -8,7 +8,6 @@ from scipy.special import expit
 from scipy.stats import norm
 
 
-
 __all__ = [
     "create_model_fixed",
     "softmax",
