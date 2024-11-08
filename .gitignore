@@ -1,6 +1,7 @@
 # Private files
 private/
 data/
+generated/  # Snakemake-generated files
 
 # Notebooks by default should not be uploaded (use Quarto Markdown as an alternative)
 *.nb
