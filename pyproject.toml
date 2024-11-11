@@ -37,7 +37,7 @@ jupytext = "^1.16.1"
 jupyterlab = "^4.1.6"
 
 [tool.ruff]
-exclude = [".venv"]
+exclude = [".venv", "examples"]
 select = ["E", "F", "I001"]
 ignore = ["E721", "E731", "F722", "E501"]
 # ignore-init-module-imports = true
