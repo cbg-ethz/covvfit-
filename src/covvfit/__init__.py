@@ -1,8 +1,24 @@
-from covvfit._splines import create_spline_matrix
-from covvfit._preprocess_abundances import make_data_list, preprocess_df, load_data
+import warnings
 
-import covvfit._frequentist as freq
+try:
+    import covvfit._frequentist as freq
+except Exception as e:
+    warnings.warn(
+        f"It is not possible to use `freq` subpackage due to missing dependencies. Exception raised: {e}"
+    )
+    freq = None
+try:
+    import covvfit._frequentist_jax as freq_jax
+except Exception as e:
+    warnings.warn(
+        f"It is not possible to use `freq_jax` subpackage due to missing dependencies. Exception raised: {e}"
+    )
+    freq_jax = None
+
 import covvfit.plotting as plot
+import covvfit.simulation as simulation
+from covvfit._preprocess_abundances import load_data, make_data_list, preprocess_df
+from covvfit._splines import create_spline_matrix
 
 VERSION = "0.1.0"
 
@@ -14,5 +30,7 @@ __all__ = [
     "load_data",
     "VERSION",
     "freq",
+    "freq_jax",
     "plot",
+    "simulation",
 ]

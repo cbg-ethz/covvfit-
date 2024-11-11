@@ -1,13 +1,9 @@
 """utilities to fit frequentist models"""
 
-import pymc as pm
-
 import numpy as np
-
+import pymc as pm
 from scipy.special import expit
 from scipy.stats import norm
-
-
 
 __all__ = [
     "create_model_fixed",
@@ -209,25 +205,16 @@ def make_fitness_confints(t_rate, model_hessian_fixed, overdisp_fixed=1.0, g=7.0
     return fitness_diff, fitness_diff_se, fitness_diff_lower, fitness_diff_upper
 
 
-
 def make_confidence_bands(
-    ts,
-    y_fit,
-    hessian_inv,
-    k_th_variant,
-    rate,
-    midpoint,
-    overdisp,
-    confidence=0.95
+    ts, y_fit, hessian_inv, k_th_variant, rate, midpoint, overdisp, confidence=0.95
 ):
-    
-    p_variants=len(rate)
-    p_params=hessian_inv.shape[0]
+    p_variants = len(rate)
+    p_params = hessian_inv.shape[0]
     z_score = norm.ppf(1 - (1 - confidence) / 2)
     hessian_indices = np.concatenate(
         [
             np.arange(p_variants) + k_th_variant * p_variants,
-            np.arange(p_params - p_variants, p_params),
+            np.arange(hessian_inv.shape[0] - p_variants, p_params),
         ]
     )
     tmp_hessian = hessian_inv[hessian_indices, :][:, hessian_indices]
@@ -244,12 +231,10 @@ def make_confidence_bands(
             for t in ts
         ]
     ).T
-    
-    conf_bands = {
-        "lower":expit(y_fit_logit - z_score * logit_se),
-        "upper":expit(y_fit_logit + z_score * logit_se),
-    }
-    
-    return conf_bands
-    
 
+    conf_bands = {
+        "lower": expit(y_fit_logit - z_score * logit_se),
+        "upper": expit(y_fit_logit + z_score * logit_se),
+    }
+
+    return conf_bands

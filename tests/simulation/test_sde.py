@@ -1,8 +1,6 @@
 import jax
 import jax.numpy as jnp
-
 import numpy.testing as npt
-
 from covvfit.simulation._sde import (
     simplex_complete,
     solve_stochastic_replicator_dynamics,

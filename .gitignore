@@ -1,6 +1,8 @@
 # Private files
 private/
 data/
+# Snakemake-generated files
+generated/
 
 # Notebooks by default should not be uploaded (use Quarto Markdown as an alternative)
 *.nb
@@ -15,6 +17,8 @@ data/
 *.pdf
 *.png
 *.zip
+
+.DS_Store
 
 # Poetry lock file
 poetry.lock
