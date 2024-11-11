@@ -101,7 +101,11 @@ def fitted_values(ts_lst, model_map_fixed, cities):
     return y_fit_lst
 
 
-def pred_values(ts_lst, model_map_fixed, cities, horizon=60):
+def pred_values(
+        ts_lst,
+        model_map_fixed,
+        cities, 
+        horizon=60):
     """function to make the fitted values of a model"""
     ts_pred_lst = [np.arange(horizon) + tt.max() + 1 for tt in ts_lst]
     y_pred_lst = [
@@ -223,7 +227,7 @@ def make_confidence_bands(
     hessian_indices = np.concatenate(
         [
             np.arange(p_variants) + k_th_variant * p_variants,
-            np.arange(hessian_inv.shape[0] - p_variants, p_params),
+            np.arange(p_params - p_variants, p_params),
         ]
     )
     tmp_hessian = hessian_inv[hessian_indices, :][:, hessian_indices]

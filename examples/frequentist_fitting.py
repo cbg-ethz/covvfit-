@@ -7,9 +7,9 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.16.1
 #   kernelspec:
-#     display_name: Python 3 (ipykernel)
+#     display_name: Python (covvfit)
 #     language: python
-#     name: python3
+#     name: covvfit
 # ---
 
 # %%
@@ -95,6 +95,12 @@ colors_covsp = {
 
 
 # %%
+data.head()
+
+# %%
+data2.head()
+
+# %%
 DATA_PATH = "../data/robust_deconv2_noisy14.csv"
 
 data = prec.load_data(DATA_PATH)
@@ -147,7 +153,6 @@ def create_model_fixed2(
 
         # make Multinom/n likelihood
         def log_likelihood(y, p, n):
-            # return n*pm.math.sum(y * pm.math.log(p), axis=0) + n*(1-pm.math.sum(y, axis=0))*pm.math.log(1-pm.math.sum(p, axis=0))
             return n * pm.math.sum(y * pm.math.log(p), axis=0)
 
         [
@@ -175,6 +180,65 @@ with create_model_fixed2(
 ):
     model_map_fixed = pm.find_MAP(maxeval=50000, seed=12313)
 
+
+# %%
+def boot_rates(ts_lst, ys_lst, n_boot=100):
+    rates = []  # List to store parameter estimates for each bootstrap iteration
+
+    for i in range(n_boot):
+        # Initialize lists to store the resampled data
+        ts_lst_resampled = []
+        ys_lst_resampled = []
+
+        # Resample data with consistent indices for both ts and ys
+        for ts, ys in zip(ts_lst, ys_lst):
+            boot_indices = np.random.choice(len(ts), size=len(ts), replace=True)  # Indices for resampling
+            ts_resampled = ts[boot_indices]  # Apply boot indices to ts
+            ys_resampled = ys[:,boot_indices]  # Apply the same boot indices to ys
+
+            ts_lst_resampled.append(ts_resampled)
+            ys_lst_resampled.append(ys_resampled)
+
+        # Fit the model with resampled data
+        with create_model_fixed2(
+            ts_lst_resampled,
+            ys_lst_resampled,
+            coords={
+                "cities": cities,
+                "variants": variants,
+            }
+        ):
+            model_map_fixed = pm.find_MAP(maxeval=50000, seed=12313)
+
+        # Collect the "rate" parameter estimate from the model
+        rates.append(model_map_fixed["rate"])
+
+    return np.array(rates)  # Return an array of rate estimates for all bootstrap iterations
+
+
+
+# %%
+booted_rates = boot_rates(ts_lst, ys_lst, n_boot=10)
+
+# %%
+plt.figure(figsize=(10, 6))
+for i in range(7):
+    plt.hist(booted_rates[:, i], bins=10, alpha=0.5, label=f'Parameter {i+1}')
+
+plt.xlabel('Rate values')
+plt.ylabel('Frequency')
+plt.title('Histograms of Bootstrapped Rate Parameters')
+plt.legend(loc='upper right')
+plt.show()
+
+# %%
+model_map_fixed["rate"].shape
+
+
+# %%
+def boot_rates(ts_lst, ys_lst, n_boot=100):
+    for i in range(n_boot):
+        
 
 # %%
 ## This model takes into account the complement of the variants to be monitored, and sets its fitness to zero
@@ -490,7 +554,7 @@ fig.legend(
 )
 
 
-plt.savefig("growth_rates20231108.pdf", bbox_inches="tight")
+# plt.savefig("growth_rates20231108.pdf", bbox_inches="tight")
 
 plt.show()
 
