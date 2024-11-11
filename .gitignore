@@ -4,6 +4,9 @@ data/
 # Snakemake-generated files
 generated/
 
+.DS_Store
+src/.DS_Store
+
 # Notebooks by default should not be uploaded (use Quarto Markdown as an alternative)
 *.nb
 *.ipynb

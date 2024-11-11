@@ -37,10 +37,39 @@ jupytext = "^1.16.1"
 jupyterlab = "^4.1.6"
 
 [tool.ruff]
-exclude = [".venv"]
+exclude = [".venv", "examples"]
 select = ["E", "F", "I001"]
 ignore = ["E721", "E731", "F722", "E501"]
 # ignore-init-module-imports = true
+
+[tool.black]
+include = '''
+/(
+     src
+   | scripts
+   | tests
+)/
+'''
+exclude = '''
+/(
+    \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+  | docs
+  | venv
+)/
+  | README.md
+  | examples
+  | __pycache__
+  | estimators.yaml
+'''
+
 
 [tool.jupytext]
 formats = "ipynb,py:percent"

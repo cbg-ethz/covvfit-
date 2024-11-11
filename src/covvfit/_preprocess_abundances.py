@@ -51,7 +51,7 @@ def make_data_list(
 ) -> tuple[list, list]:
     ts_lst = [df[(df.city == city)].days_from.values for city in cities]
     ys_lst = [
-        df[(df.city == city)][variants].values.T for city in cities  # pyright: ignore
-    ]
+        df[(df.city == city)][variants].values.T for city in cities
+    ]  # pyright: ignore
 
     return (ts_lst, ys_lst)
