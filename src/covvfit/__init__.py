@@ -15,8 +15,15 @@ except Exception as e:
     )
     freq_jax = None
 
+try:
+    import covvfit.simulation as simulation
+except Exception as e:
+    warnings.warn(
+        f"It is not possible to use `simulation` subpackage due to missing dependencies. Exception raised: {e}"
+    )
+    simulation = None
+
 import covvfit.plotting as plot
-import covvfit.simulation as simulation
 from covvfit._preprocess_abundances import load_data, make_data_list, preprocess_df
 from covvfit._splines import create_spline_matrix
 

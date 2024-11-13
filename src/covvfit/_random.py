@@ -1,4 +1,5 @@
 """Random number generation."""
+
 import jax
 
 

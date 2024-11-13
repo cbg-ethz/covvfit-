@@ -29,8 +29,12 @@ class SimulationSettings:
     n_cities: int  # Number of cities
     n_variants: int  # Number of
     growth_rates: jax.Array  # Growth rates of individual variants, shape (n_variants,)
-    midpoints: jax.Array  # Midpoints for each variant and each sity, shape (n_cities, n_variants)
-    n_multinomial: jax.Array  # Settings for multinomial noise for each city, shape (n_cities,).
+    midpoints: (
+        jax.Array
+    )  # Midpoints for each variant and each sity, shape (n_cities, n_variants)
+    n_multinomial: (
+        jax.Array
+    )  # Settings for multinomial noise for each city, shape (n_cities,).
     n_observations: jax.Array  # Number of observations per city
     time0: float = 0.0
     time1: float = 1.0
