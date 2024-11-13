@@ -1,4 +1,5 @@
 """Frequentist fitting functions powered by JAX."""
+
 import dataclasses
 from typing import Callable, NamedTuple, Sequence
 
@@ -18,9 +19,8 @@ def calculate_linear(
     m = midpoints.reshape(shape)
     g = growths.reshape(shape)
 
-    return (ts[..., None] - m) * g 
+    return (ts[..., None] - m) * g
     # return (ts[..., None] ) * g + m
-
 
 
 _Float = float | Float[Array, " "]
@@ -87,7 +87,7 @@ def construct_total_loss(
             city.ys.shape[-1] == n_variants
         ), "All cities must have the same number of variants"
 
-    if average_loss: # trick for numerical stability (average loss doesnt blow up)
+    if average_loss:  # trick for numerical stability (average loss doesnt blow up)
         n_points_total = 1.0 * sum(city.ts.shape[0] for city in cities)
     else:
         n_points_total = 1.0
