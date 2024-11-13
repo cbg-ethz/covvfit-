@@ -6,6 +6,8 @@ from typing import Callable, NamedTuple, Sequence
 import jax
 import jax.numpy as jnp
 import numpy as np
+import numpyro
+import numpyro.distributions as distrib
 from jaxtyping import Array, Float
 from scipy import optimize
 
@@ -286,3 +288,180 @@ def jax_multistart_minimize(
         fun=solutions[optimal_index].fun,
         runs=solutions,
     )
+
+
+class _ProblemData(NamedTuple):
+    """Internal representation of the data used
+    to efficiently construct the quasilikelihood.
+
+    Attrs:
+        ts: array of shape (cities, timepoints)
+            which is padded with 0 for days where
+            there is no measurement for a particular city
+        ys: array of shape (cities, timepoints, variants)
+            which is padded with the vector (1/variants, ..., 1/variants)
+            for timepoints where there is no measurement for a particular city
+        mask: array of shape (cities, timepoints) with 0 when there is
+            no measurement for a particular city and 1 otherwise
+        n: quasimultinomial number of trials for each city
+        overdispersion: overdispersion factor for each city
+    """
+
+    n_cities: int
+    n_variants: int
+    ts: Float[Array, "cities timepoints"]
+    ys: Float[Array, "cities timepoints variants"]
+    mask: Float[Array, "cities timepoints"]
+    n: Float[Array, " cities"]
+    overdispersion: Float[Array, " cities"]
+
+
+def _validate_and_pad(
+    ys: list[jax.Array],
+    ts: list[jax.Array],
+    ns: Float[Array, " cities"] | list[float] | float = 1.0,
+    overdispersion: Float[Array, " cities"] | list[float] | float = 1.0,
+) -> _ProblemData:
+    """Validation function, parsing the input provided in
+    the format convenient for the user to the internal
+    representation compatible with JAX."""
+    # Get the number of cities
+    n_cities = len(ys)
+    if len(ts) != n_cities:
+        raise ValueError(f"Number of cities not consistent: {len(ys)} != {len(ts)}.")
+
+    # Create arrays representing `n` and `overdispersion`
+    if hasattr(ns, "__len__"):
+        if len(ns) != n_cities:
+            raise ValueError(
+                f"Provided `ns` has length {len(ns)} rather than {n_cities}."
+            )
+    if hasattr(overdispersion, "__len__"):
+        if len(overdispersion) != n_cities:
+            raise ValueError(
+                f"Provided `overdispersion` has length {len(overdispersion)} rather than {n_cities}."
+            )
+
+    out_n = jnp.asarray(ns) * jnp.ones(n_cities, dtype=float)
+    out_overdispersion = jnp.asarray(overdispersion) * jnp.ones_like(out_n)
+
+    # Get the number of variants
+    n_variants = ys[0].shape[-1]
+    for i, y in enumerate(ys):
+        if y.ndim != 2:
+            raise ValueError(f"City {i} has {y.ndim} dimension, rather than 2.")
+        if y.shape[-1] != n_variants:
+            raise ValueError(
+                f"City {i} has {y.shape[-1]} variants rather than {n_variants}."
+            )
+
+    # Ensure that the number of timepoints is consistent
+    max_timepoints = 0
+    for i, (t, y) in enumerate(zip(ts, ys)):
+        if t.ndim != 1:
+            raise ValueError(
+                f"City {i} has time axis with dimension {t.ndim}, rather than 1."
+            )
+        if t.shape[0] != y.shape[0]:
+            raise ValueError(
+                f"City {i} has timepoints mismatch: {t.shape[0]} != {y.shape[0]}."
+            )
+
+        max_timepoints = t.shape[0]
+
+    # Now create the arrays representing the data
+    out_ts = jnp.zeros((n_cities, max_timepoints))  # Pad with zeros
+    out_mask = jnp.zeros((n_cities, max_timepoints))  # Pad with zeros
+    out_ys = jnp.full(
+        shape=(n_cities, max_timepoints, n_variants), fill_value=1.0 / n_variants
+    )  # Pad with constant vectors
+
+    for i, (t, y) in enumerate(zip(ts, ys)):
+        n_timepoints = t.shape[0]
+
+        out_ts = out_ts.at[i, :n_timepoints].set(t)
+        out_ys = out_ys.at[i, :n_timepoints, :].set(y)
+        out_mask = out_mask.at[i, :n_timepoints].set(1)
+
+    return _ProblemData(
+        n_cities=n_cities,
+        n_variants=n_variants,
+        ts=out_ts,
+        ys=out_ys,
+        mask=out_mask,
+        n=out_n,
+        overdispersion=out_overdispersion,
+    )
+
+
+def construct_model(
+    ys: list[jax.Array],
+    ts: list[jax.Array],
+    ns: Float[Array, " cities"] | list[float] | float = 1.0,
+    overdispersion: Float[Array, " cities"] | list[float] | float = 1.0,
+    sigma_growth: float = 10.0,
+    sigma_offset: float = 1000.0,
+) -> Callable:
+    """Builds a NumPyro model sampling from the quasiposterior.
+
+    Args:
+        ys: list of variant proportions for each city.
+            The ith entry should be an array
+            of shape (n_timepoints[i], n_variants)
+        ts: list of timepoints. The ith entry should be an array
+            of shape (n_timepoints[i],)
+            Note: `ts` should be appropriately normalized
+        ns: controls the overdispersion of each city
+    """
+    data = _validate_and_pad(
+        ys=ys,
+        ts=ts,
+        ns=ns,
+        overdispersion=overdispersion,
+    )
+
+    def model():
+        # Sample growth differences. Note that we sample from the N(0, 1)
+        # distribution and then resample, for numerical stability
+        _scaled_rel_growths = numpyro.sample(
+            "_scaled_relative_growths",
+            distrib.Normal().expand((data.n_variants - 1,)),
+        )
+        numpyro.deterministic(
+            "relative_growths",
+            sigma_growth * _scaled_rel_growths,
+        )
+
+        # Sample offsets. We use scaling the same scaling trick as above
+        _scaled_rel_offsets = numpyro.sample(
+            "_scaled_offsets",
+            distrib.Normal().expand((data.n_cities, data.n_variants - 1)),
+        )
+        numpyro.deterministic(
+            "offsets",
+            _scaled_rel_growths * sigma_offset,
+        )
+
+        # Construct the loglikelihood
+        # TODO(Pawel): Add the implementation
+        raise NotImplementedError()
+
+    return model
+
+
+def construct_total_loss_new(
+    ys: list[jax.Array],
+    ts: list[jax.Array],
+    ns: list[float] | float = 1.0,
+    overdispersion: list[float] | float = 1.0,
+    average_loss: bool = True,
+) -> Callable[[_ThetaType], _Float]:
+    data = _validate_and_pad(
+        ys=ys,
+        ts=ts,
+        ns=ns,
+        overdispersion=overdispersion,
+    )
+    assert data is not None
+    # TODO(Pawel): Finish this implementation.
+    raise NotImplementedError()
