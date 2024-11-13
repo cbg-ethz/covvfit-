@@ -74,7 +74,7 @@ class CityData(NamedTuple):
 _ThetaType = Float[Array, "(cities+1)*(variants-1)"]
 
 
-def add_first_variant(vec: Float[Array, " variants-1"]) -> Float[Array, " variants"]:
+def _add_first_variant(vec: Float[Array, " variants-1"]) -> Float[Array, " variants"]:
     return jnp.concatenate([jnp.zeros_like(vec)[0:1], vec])
 
 
@@ -98,7 +98,7 @@ def construct_total_loss(
         rel_growths = get_relative_growths(theta, n_variants=n_variants)
         rel_midpoints = get_relative_midpoints(theta, n_variants=n_variants)
 
-        growths = add_first_variant(rel_growths)
+        growths = _add_first_variant(rel_growths)
         return (
             jnp.sum(
                 jnp.asarray(
@@ -108,7 +108,7 @@ def construct_total_loss(
                             n=city.n,
                             logp=calculate_logps(
                                 ts=city.ts,
-                                midpoints=add_first_variant(midp),
+                                midpoints=_add_first_variant(midp),
                                 growths=growths,
                             ),
                         ).sum()
@@ -204,10 +204,10 @@ def get_softmax_predictions(
     theta: _ThetaType, n_variants: int, city_index: int, ts: Float[Array, " timepoints"]
 ) -> Float[Array, "timepoints variants"]:
     rel_growths = get_relative_growths(theta, n_variants=n_variants)
-    growths = add_first_variant(rel_growths)
+    growths = _add_first_variant(rel_growths)
 
     rel_midpoints = get_relative_midpoints(theta, n_variants=n_variants)
-    midpoints = add_first_variant(rel_midpoints[city_index])
+    midpoints = _add_first_variant(rel_midpoints[city_index])
 
     y_linear = calculate_linear(
         ts=ts,
@@ -303,7 +303,7 @@ class _ProblemData(NamedTuple):
             for timepoints where there is no measurement for a particular city
         mask: array of shape (cities, timepoints) with 0 when there is
             no measurement for a particular city and 1 otherwise
-        n: quasimultinomial number of trials for each city
+        n_quasimul: quasimultinomial number of trials for each city
         overdispersion: overdispersion factor for each city
     """
 
@@ -312,14 +312,14 @@ class _ProblemData(NamedTuple):
     ts: Float[Array, "cities timepoints"]
     ys: Float[Array, "cities timepoints variants"]
     mask: Float[Array, "cities timepoints"]
-    n: Float[Array, " cities"]
+    n_quasimul: Float[Array, " cities"]
     overdispersion: Float[Array, " cities"]
 
 
 def _validate_and_pad(
     ys: list[jax.Array],
     ts: list[jax.Array],
-    ns: Float[Array, " cities"] | list[float] | float = 1.0,
+    ns_quasimul: Float[Array, " cities"] | list[float] | float = 1.0,
     overdispersion: Float[Array, " cities"] | list[float] | float = 1.0,
 ) -> _ProblemData:
     """Validation function, parsing the input provided in
@@ -331,10 +331,10 @@ def _validate_and_pad(
         raise ValueError(f"Number of cities not consistent: {len(ys)} != {len(ts)}.")
 
     # Create arrays representing `n` and `overdispersion`
-    if hasattr(ns, "__len__"):
-        if len(ns) != n_cities:
+    if hasattr(ns_quasimul, "__len__"):
+        if len(ns_quasimul) != n_cities:
             raise ValueError(
-                f"Provided `ns` has length {len(ns)} rather than {n_cities}."
+                f"Provided `ns_quasimul` has length {len(ns_quasimul)} rather than {n_cities}."
             )
     if hasattr(overdispersion, "__len__"):
         if len(overdispersion) != n_cities:
@@ -342,7 +342,7 @@ def _validate_and_pad(
                 f"Provided `overdispersion` has length {len(overdispersion)} rather than {n_cities}."
             )
 
-    out_n = jnp.asarray(ns) * jnp.ones(n_cities, dtype=float)
+    out_n = jnp.asarray(ns_quasimul) * jnp.ones(n_cities, dtype=float)
     out_overdispersion = jnp.asarray(overdispersion) * jnp.ones_like(out_n)
 
     # Get the number of variants
@@ -389,9 +389,61 @@ def _validate_and_pad(
         ts=out_ts,
         ys=out_ys,
         mask=out_mask,
-        n=out_n,
+        n_quasimul=out_n,
         overdispersion=out_overdispersion,
     )
+
+
+def _quasiloglikelihood_single_city(
+    relative_growths: Float[Array, " variants-1"],
+    relative_offsets: Float[Array, " variants-1"],
+    ts: Float[Array, " timepoints"],
+    ys: Float[Array, "timepoints variants"],
+    mask: Float[Array, " timepoints"],
+    n_quasimul: float,
+    overdispersion: float,
+) -> float:
+    weight = n_quasimul / overdispersion
+    logps = calculate_logps(
+        ts=ts,
+        midpoints=_add_first_variant(relative_offsets),
+        growths=_add_first_variant(relative_growths),
+    )
+    return jnp.sum(mask * weight * ys * logps)
+
+
+_RelativeGrowthsAndOffsetsFunction = Callable[
+    [Float[Array, " variants-1"], Float[Array, " variants-1"]], _Float
+]
+
+
+def _generate_quasiloglikelihood_function(
+    data: _ProblemData,
+) -> _RelativeGrowthsAndOffsetsFunction:
+    """Creates the quasilikelihood function with signature:
+
+    def quasiloglikelihood(
+        relative_growths: array of shape (variants-1,)
+        relative_offsets: array of shape (cities, variants-1)
+    ) -> float
+    """
+
+    def quasiloglikelihood(
+        relative_growths: Float[Array, " variants-1"],
+        relative_offsets: Float[Array, "cities variants-1"],
+    ):
+        logps = jax.vmap(_quasiloglikelihood_single_city)(
+            relative_growths=relative_growths,
+            relative_offsets=relative_offsets,
+            ts=data.ts,
+            ys=data.ys,
+            mask=data.mask,
+            n_quasimul=data.n_quasimul,
+            overdispersion=data.overdispersion,
+        )
+        return jnp.sum(logps)
+
+    return quasiloglikelihood
 
 
 def construct_model(
@@ -402,7 +454,7 @@ def construct_model(
     sigma_growth: float = 10.0,
     sigma_offset: float = 1000.0,
 ) -> Callable:
-    """Builds a NumPyro model sampling from the quasiposterior.
+    """Builds a NumPyro model suitable for sampling from the quasiposterior.
 
     Args:
         ys: list of variant proportions for each city.
@@ -411,7 +463,19 @@ def construct_model(
         ts: list of timepoints. The ith entry should be an array
             of shape (n_timepoints[i],)
             Note: `ts` should be appropriately normalized
-        ns: controls the overdispersion of each city
+        ns: controls the overdispersion of each city by means of
+            quasimultinomial sample size
+        overdispersion: controls the overdispersion factor as in the
+            quasilikelihood approach
+        sigma_growth: controls the standard deviation of the prior
+            on the relative growths
+        sigma_offset: controls the standard deviation of the prior
+            on the relative offsets
+
+    Note:
+        The "loglikelihood" is effectively rescaled by `ns/overdispersion`
+        factor. Hence, using both `ns` and `overdispersion` should generally
+        be avoided.
     """
     data = _validate_and_pad(
         ys=ys,
@@ -420,6 +484,8 @@ def construct_model(
         overdispersion=overdispersion,
     )
 
+    quasi_ll_fn = _generate_quasiloglikelihood_function(data)
+
     def model():
         # Sample growth differences. Note that we sample from the N(0, 1)
         # distribution and then resample, for numerical stability
@@ -427,24 +493,22 @@ def construct_model(
             "_scaled_relative_growths",
             distrib.Normal().expand((data.n_variants - 1,)),
         )
-        numpyro.deterministic(
+        rel_growths = numpyro.deterministic(
             "relative_growths",
             sigma_growth * _scaled_rel_growths,
         )
 
         # Sample offsets. We use scaling the same scaling trick as above
         _scaled_rel_offsets = numpyro.sample(
-            "_scaled_offsets",
+            "_scaled_relative_offsets",
             distrib.Normal().expand((data.n_cities, data.n_variants - 1)),
         )
-        numpyro.deterministic(
-            "offsets",
-            _scaled_rel_growths * sigma_offset,
+        rel_offsets = numpyro.deterministic(
+            "relative_offsets",
+            _scaled_rel_offsets * sigma_offset,
         )
 
-        # Construct the loglikelihood
-        # TODO(Pawel): Add the implementation
-        raise NotImplementedError()
+        numpyro.factor("quasiloglikelihood", quasi_ll_fn(rel_growths, rel_offsets))
 
     return model
 
@@ -455,13 +519,68 @@ def construct_total_loss_new(
     ns: list[float] | float = 1.0,
     overdispersion: list[float] | float = 1.0,
     average_loss: bool = True,
-) -> Callable[[_ThetaType], _Float]:
-    data = _validate_and_pad(
+    accept_theta: bool = True,
+) -> Callable[[_ThetaType], _Float] | _RelativeGrowthsAndOffsetsFunction:
+    """Constructs the loss function, suitable e.g., for optimization.
+
+    Args:
+        ys: list of variant proportions for each city.
+            The ith entry should be an array
+            of shape (n_timepoints[i], n_variants)
+        ts: list of timepoints. The ith entry should be an array
+            of shape (n_timepoints[i],)
+            Note: `ts` should be appropriately normalized
+        ns: controls the overdispersion of each city by means of
+            quasimultinomial sample size
+        overdispersion: controls the overdispersion factor as in the
+            quasilikelihood approach
+        average_loss: whether the loss should be divided by the
+            total number of points. By default it is true, as it
+            can help with the stability of the optimization algorithms
+        accept_theta: whether the returned loss function should accept the
+            `theta` vector (suitable for optimization)
+            or should be parameterized by the relative growths
+            and relative offsets, as in
+            ```
+            def loss(
+                relative_growths: array of shape (variants-1,)
+                relative_offsets: array of shape (cities, variants-1)
+            ) -> float
+            ```
+
+    Note:
+        The "loglikelihood" is effectively rescaled by `ns/overdispersion`
+        factor. Hence, using both `ns` and `overdispersion` should generally
+        be avoided.
+    """
+
+    data: _ProblemData = _validate_and_pad(
         ys=ys,
         ts=ts,
         ns=ns,
         overdispersion=overdispersion,
     )
-    assert data is not None
-    # TODO(Pawel): Finish this implementation.
-    raise NotImplementedError()
+
+    if average_loss:
+        scaling = jnp.sum(data.mask, dtype=float)
+    else:
+        scaling = 1.0
+
+    # Get the quasilikelihood function
+    quasi_ll_fn = _generate_quasiloglikelihood_function(data)
+
+    # Define the loss function parameterized
+    # with relative growths and offsets
+    def _loss_fn(relative_growths, relative_offsets):
+        return -quasi_ll_fn(relative_growths, relative_offsets) / scaling
+
+    # Define the loss function in terms of the theta variable
+    def _loss_fn_theta(theta):
+        rel_growths = get_relative_growths(theta, n_variants=data.n_variants)
+        rel_offsets = get_relative_midpoints(theta, n_variants=data.n_variants)
+        return _loss_fn(relative_growths=rel_growths, relative_offsets=rel_offsets)
+
+    if accept_theta:
+        return _loss_fn_theta
+    else:
+        return _loss_fn
