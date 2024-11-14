@@ -59,7 +59,7 @@ def make_legend(colors, variants):
     return handles
 
 
-def num_to_date(num, pos=None, date_min="2023-01-01", fmt="%b. '%y"):
+def num_to_date(num, date_min, pos=None, fmt="%b. '%y"):
     """convert days number into a date format"""
     date = pd.to_datetime(date_min) + pd.to_timedelta(num, "D")
     return date.strftime(fmt)
