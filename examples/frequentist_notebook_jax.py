@@ -33,7 +33,8 @@ import yaml
 import covvfit._frequentist as freq
 import covvfit._preprocess_abundances as prec
 import covvfit.plotting._timeseries as plot_ts
-import covvfit._frequentist_jax as fj
+
+from covvfit import quasimultinomial as qm
 
 # -
 
@@ -119,7 +120,7 @@ ts_lst_scaled = [(x - t_min) / (t_max - t_min) for x in ts_lst]
 
 
 # no priors
-loss = fj.construct_total_loss(
+loss = qm.construct_total_loss(
     ys=[
         y.T for y in ys_lst
     ],  # Recall that the input should be (n_timepoints, n_variants)
@@ -128,24 +129,25 @@ loss = fj.construct_total_loss(
 )
 
 # initial parameters
-theta0 = fj.construct_theta0(n_cities=len(cities), n_variants=len(variants2))
+theta0 = qm.construct_theta0(n_cities=len(cities), n_variants=len(variants2))
 
 # Run the optimization routine
-solution = fj.jax_multistart_minimize(loss, theta0, n_starts=10)
+solution = qm.jax_multistart_minimize(loss, theta0, n_starts=10)
 # -
 
 # ## Make fitted values and confidence intervals
 
 # +
 ## compute fitted values
-y_fit_lst = fj.fitted_values(
+y_fit_lst = qm.fitted_values(
     ts_lst_scaled, theta=solution.x, cities=cities, n_variants=len(variants2)
 )
 
 ## compute covariance matrix
-covariance = fj.get_covariance(loss2, solution.x)
+covariance = qm.get_covariance(loss, solution.x)
 
 ## compute overdispersion
+# TODO(Pawel, David): Port compute_overdispersion to `qm`
 pearson_r_lst, overdisp_list, overdisp_fixed = freq.compute_overdispersion(
     ys_lst2, y_fit_lst, cities
 )
@@ -154,11 +156,11 @@ pearson_r_lst, overdisp_list, overdisp_fixed = freq.compute_overdispersion(
 covariance_scaled = overdisp_fixed * covariance
 
 ## compute standard errors and confidence intervals of the estimates
-standard_errors_estimates = fj.get_standard_errors(covariance_scaled)
-confints_estimates = fj.get_confidence_intervals(solution.x, standard_errors_estimates)
+standard_errors_estimates = qm.get_standard_errors(covariance_scaled)
+confints_estimates = qm.get_confidence_intervals(solution.x, standard_errors_estimates)
 
 ## compute confidence intervals of the fitted values on the logit scale and back transform
-y_fit_lst_confint = fj.get_confidence_bands_logit(
+y_fit_lst_confint = qm.get_confidence_bands_logit(
     solution.x, len(variants2), ts_lst_scaled, covariance_scaled
 )
 
@@ -166,10 +168,10 @@ y_fit_lst_confint = fj.get_confidence_bands_logit(
 horizon = 60
 ts_pred_lst = [jnp.arange(horizon + 1) + tt.max() for tt in ts_lst]
 ts_pred_lst_scaled = [(x - t_min) / (t_max - t_min) for x in ts_pred_lst]
-y_pred_lst = fj.fitted_values(
+y_pred_lst = qm.fitted_values(
     ts_pred_lst_scaled, theta=solution.x, cities=cities, n_variants=len(variants2)
 )
-y_pred_lst_confint = fj.get_confidence_bands_logit(
+y_pred_lst_confint = qm.get_confidence_bands_logit(
     solution.x, len(variants2), ts_pred_lst_scaled, covariance_scaled
 )
 
