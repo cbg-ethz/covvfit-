@@ -1,7 +1,7 @@
 """Frequentist fitting functions powered by JAX."""
 
 import dataclasses
-from typing import Callable, List, NamedTuple, Optional, Sequence, Tuple
+from typing import Callable, List, NamedTuple, Optional, Sequence
 
 import jax
 import jax.numpy as jnp
@@ -21,7 +21,6 @@ def calculate_linear(
 
     # return (ts[..., None] - m) * g
     return (ts[..., None]) * g + m
-
 
 
 _Float = float | Float[Array, " "]
