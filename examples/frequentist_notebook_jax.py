@@ -1,16 +1,16 @@
 # ---
 # jupyter:
 #   jupytext:
-#     formats: ipynb,py
+#     formats: ipynb,py:light
 #     text_representation:
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.16.4
+#       jupytext_version: 1.16.1
 #   kernelspec:
-#     display_name: jax
+#     display_name: Python 3 (ipykernel)
 #     language: python
-#     name: jax
+#     name: python3
 # ---
 
 # +
@@ -18,8 +18,6 @@ import jax
 import jax.numpy as jnp
 
 import pandas as pd
-
-# import pymc as pm
 
 import numpy as np
 
@@ -42,9 +40,21 @@ import covvfit._frequentist_jax as fj
 
 # # Load and preprocess data
 
-DATA_PATH = "../../LolliPop/lollipop_test_noisy/deconvolved.csv"
+# +
+DATA_PATH = "../new_data/deconvolved.csv"
+VAR_DATES_PATH = "../new_data/var_dates.yaml"
+
 data = pd.read_csv(DATA_PATH, sep="\t")
 data.head()
+
+
+# Load the YAML file
+with open(VAR_DATES_PATH, "r") as file:
+    var_dates_data = yaml.safe_load(file)
+
+# Access the var_dates data
+var_dates = var_dates_data["var_dates"]
+# -
 
 data_wide = data.pivot_table(
     index=["date", "location"], columns="variant", values="proportion", fill_value=0
@@ -58,19 +68,6 @@ data_wide.head()
 max_date = pd.to_datetime(data_wide["time"]).max()
 delta_time = pd.Timedelta(days=240)
 start_date = max_date - delta_time
-# -
-
-
-# +
-# Path to the YAML file
-var_dates_yaml = "../../LolliPop/lollipop_test_noisy/var_dates.yaml"
-
-# Load the YAML file
-with open(var_dates_yaml, "r") as file:
-    var_dates_data = yaml.safe_load(file)
-
-# Access the var_dates data
-var_dates = var_dates_data["var_dates"]
 
 
 # +
@@ -119,19 +116,22 @@ ts_lst_scaled = [(x - t_min) / (t_max - t_min) for x in ts_lst]
 
 # +
 # %%time
-data = []
 
-for t, y in zip(ts_lst_scaled, ys_lst):
-    data.append(fj.REDUNDANTCityData(ts=t, ys=y.T, n=1))
 
 # no priors
-loss = fj.REDUNDANT_construct_total_loss(data)
+loss = fj.construct_total_loss(
+    ys=[
+        y.T for y in ys_lst
+    ],  # Recall that the input should be (n_timepoints, n_variants)
+    ts=ts_lst_scaled,
+    average_loss=False,  # Do not average the loss over the data points, so that the covariance matrix shrinks with more and more data added
+)
+
 # initial parameters
 theta0 = fj.construct_theta0(n_cities=len(cities), n_variants=len(variants2))
 
-#
+# Run the optimization routine
 solution = fj.jax_multistart_minimize(loss, theta0, n_starts=10)
-
 # -
 
 # ## Make fitted values and confidence intervals
@@ -143,7 +143,7 @@ y_fit_lst = fj.fitted_values(
 )
 
 ## compute covariance matrix
-covariance = fj.get_covariance(loss, solution.x)
+covariance = fj.get_covariance(loss2, solution.x)
 
 ## compute overdispersion
 pearson_r_lst, overdisp_list, overdisp_fixed = freq.compute_overdispersion(
@@ -236,3 +236,4 @@ for i, city in enumerate(cities):
 
 fig.tight_layout()
 fig.show()
+# -

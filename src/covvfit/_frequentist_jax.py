@@ -1,7 +1,7 @@
 """Frequentist fitting functions powered by JAX."""
 
 import dataclasses
-from typing import Callable, NamedTuple, Sequence
+from typing import Callable, NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -65,62 +65,12 @@ def loss(
     return -jnp.sum(n * y * logp, axis=-1)
 
 
-class REDUNDANTCityData(NamedTuple):
-    ts: Float[Array, " timepoints"]
-    ys: Float[Array, "timepoints variants"]
-    n: _Float
-
-
 _ThetaType = Float[Array, "(cities+1)*(variants-1)"]
 
 
 def _add_first_variant(vec: Float[Array, " variants-1"]) -> Float[Array, " variants"]:
     """Prepends 0 to the beginning of the vector."""
     return jnp.concatenate((jnp.zeros(1, dtype=vec.dtype), vec))
-
-
-def REDUNDANT_construct_total_loss(
-    cities: Sequence[REDUNDANTCityData],
-    average_loss: bool = False,
-) -> Callable[[_ThetaType], _Float]:
-    cities = tuple(cities)
-    n_variants = cities[0].ys.shape[-1]
-    for city in cities:
-        assert (
-            city.ys.shape[-1] == n_variants
-        ), "All cities must have the same number of variants"
-
-    if average_loss:  # trick for numerical stability (average loss doesnt blow up)
-        n_points_total = 1.0 * sum(city.ts.shape[0] for city in cities)
-    else:
-        n_points_total = 1.0
-
-    def total_loss(theta: _ThetaType) -> _Float:
-        rel_growths = get_relative_growths(theta, n_variants=n_variants)
-        rel_midpoints = get_relative_midpoints(theta, n_variants=n_variants)
-
-        growths = _add_first_variant(rel_growths)
-        return (
-            jnp.sum(
-                jnp.asarray(
-                    [
-                        loss(
-                            y=city.ys,
-                            n=city.n,
-                            logp=calculate_logps(
-                                ts=city.ts,
-                                midpoints=_add_first_variant(midp),
-                                growths=growths,
-                            ),
-                        ).sum()
-                        for midp, city in zip(rel_midpoints, cities)
-                    ]
-                )
-            )
-            / n_points_total
-        )
-
-    return total_loss
 
 
 def construct_theta(
@@ -163,7 +113,7 @@ class StandardErrorsMultipliers(NamedTuple):
 def get_covariance(
     loss_fn: Callable[[_ThetaType], _Float],
     theta: _ThetaType,
-) -> Float[Array, "(n_params n_params)"]:
+) -> Float[Array, "n_params n_params"]:
     """Calculates the covariance matrix of the parameters.
 
     Args:
@@ -172,6 +122,12 @@ def get_covariance(
 
     Returns:
         The covariance matrix, which is the inverse of the Hessian matrix.
+
+
+    Note:
+        `loss_fn` should *not* be averaged over the data points: otherwise,
+        the covariance matrix won't shrink even when a very big data
+        set is used
     """
     hessian_matrix = jax.hessian(loss_fn)(theta)
     covariance_matrix = jnp.linalg.inv(hessian_matrix)
@@ -570,7 +526,7 @@ def _quasiloglikelihood_single_city(
         midpoints=_add_first_variant(relative_offsets),
         growths=_add_first_variant(relative_growths),
     )
-    return jnp.sum(mask * weight * ys * logps)
+    return jnp.sum(mask[:, None] * weight * ys * logps)
 
 
 _RelativeGrowthsAndOffsetsFunction = Callable[
@@ -592,9 +548,14 @@ def _generate_quasiloglikelihood_function(
     def quasiloglikelihood(
         relative_growths: Float[Array, " variants-1"],
         relative_offsets: Float[Array, "cities variants-1"],
-    ):
+    ) -> _Float:
+        # Broadcast the array, to use the same relative growths
+        # for each city
+        _new_shape = (data.n_cities, relative_growths.shape[-1])
+        tiled_growths = jnp.broadcast_to(relative_growths, _new_shape)
+
         logps = jax.vmap(_quasiloglikelihood_single_city)(
-            relative_growths=relative_growths,
+            relative_growths=tiled_growths,
             relative_offsets=relative_offsets,
             ts=data.ts,
             ys=data.ys,
@@ -641,7 +602,7 @@ def construct_model(
     data = _validate_and_pad(
         ys=ys,
         ts=ts,
-        ns=ns,
+        ns_quasimul=ns,
         overdispersion=overdispersion,
     )
 
@@ -679,8 +640,8 @@ def construct_total_loss(
     ts: list[jax.Array],
     ns: list[float] | float = 1.0,
     overdispersion: list[float] | float = 1.0,
-    average_loss: bool = True,
     accept_theta: bool = True,
+    average_loss: bool = False,
 ) -> Callable[[_ThetaType], _Float] | _RelativeGrowthsAndOffsetsFunction:
     """Constructs the loss function, suitable e.g., for optimization.
 
@@ -695,9 +656,6 @@ def construct_total_loss(
             quasimultinomial sample size
         overdispersion: controls the overdispersion factor as in the
             quasilikelihood approach
-        average_loss: whether the loss should be divided by the
-            total number of points. By default it is true, as it
-            can help with the stability of the optimization algorithms
         accept_theta: whether the returned loss function should accept the
             `theta` vector (suitable for optimization)
             or should be parameterized by the relative growths
@@ -708,6 +666,10 @@ def construct_total_loss(
                 relative_offsets: array of shape (cities, variants-1)
             ) -> float
             ```
+        average_loss: whether the loss should be divided by the
+            total number of points. By default it is false, as the loss
+            is used to calculate confidence intervals. Setting it to true
+            can improve the convergence of the optimization procedure
 
     Note:
         The "loglikelihood" is effectively rescaled by `ns/overdispersion`
@@ -718,7 +680,7 @@ def construct_total_loss(
     data: _ProblemData = _validate_and_pad(
         ys=ys,
         ts=ts,
-        ns=ns,
+        ns_quasimul=ns,
         overdispersion=overdispersion,
     )
 
