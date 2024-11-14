@@ -75,7 +75,8 @@ _ThetaType = Float[Array, "(cities+1)*(variants-1)"]
 
 
 def _add_first_variant(vec: Float[Array, " variants-1"]) -> Float[Array, " variants"]:
-    return jnp.concatenate([jnp.zeros_like(vec)[0:1], vec])
+    """Prepends 0 to the beginning of the vector."""
+    return jnp.concatenate((jnp.zeros(1, dtype=vec.dtype), vec))
 
 
 def construct_total_loss(
@@ -355,7 +356,7 @@ def get_relative_advantages(theta, n_variants: int):
     # over the 0th variant
     rel_growths = get_relative_growths(theta, n_variants=n_variants)
 
-    growths = jnp.concatenate((jnp.zeros(1, dtype=rel_growths.dtype), rel_growths))
+    growths = _add_first_variant(rel_growths)
     diffs = growths[None, :] - growths[:, None]
     return diffs
 
