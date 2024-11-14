@@ -18,6 +18,7 @@ import jax
 import jax.numpy as jnp
 
 import pandas as pd
+
 # import pymc as pm
 
 import numpy as np
@@ -34,7 +35,7 @@ import yaml
 import covvfit._frequentist as freq
 import covvfit._preprocess_abundances as prec
 import covvfit.plotting._timeseries as plot_ts
-import covvfit._frequentist_jax as fj 
+import covvfit._frequentist_jax as fj
 
 # -
 
@@ -58,7 +59,6 @@ max_date = pd.to_datetime(data_wide["time"]).max()
 delta_time = pd.Timedelta(days=240)
 start_date = max_date - delta_time
 # -
-
 
 
 # +
@@ -122,19 +122,15 @@ ts_lst_scaled = [(x - t_min) / (t_max - t_min) for x in ts_lst]
 data = []
 
 for t, y in zip(ts_lst_scaled, ys_lst):
-    data.append(fj.CityData(ts=t, ys=y.T, n=1))
-        
+    data.append(fj.REDUNDANTCityData(ts=t, ys=y.T, n=1))
+
 # no priors
-loss = fj.construct_total_loss(data)
+loss = fj.REDUNDANT_construct_total_loss(data)
 # initial parameters
 theta0 = fj.construct_theta0(n_cities=len(cities), n_variants=len(variants2))
 
-# 
-solution = fj.jax_multistart_minimize(
-    loss,
-    theta0,
-    n_starts=10
-)
+#
+solution = fj.jax_multistart_minimize(loss, theta0, n_starts=10)
 
 # -
 
@@ -142,7 +138,9 @@ solution = fj.jax_multistart_minimize(
 
 # +
 ## compute fitted values
-y_fit_lst = fj.fitted_values(ts_lst_scaled, theta=solution.x, cities=cities, n_variants=len(variants2))
+y_fit_lst = fj.fitted_values(
+    ts_lst_scaled, theta=solution.x, cities=cities, n_variants=len(variants2)
+)
 
 ## compute covariance matrix
 covariance = fj.get_covariance(loss, solution.x)
@@ -160,14 +158,20 @@ standard_errors_estimates = fj.get_standard_errors(covariance_scaled)
 confints_estimates = fj.get_confidence_intervals(solution.x, standard_errors_estimates)
 
 ## compute confidence intervals of the fitted values on the logit scale and back transform
-y_fit_lst_confint = fj.get_confidence_bands_logit(solution.x, len(variants2), ts_lst_scaled, covariance_scaled)
+y_fit_lst_confint = fj.get_confidence_bands_logit(
+    solution.x, len(variants2), ts_lst_scaled, covariance_scaled
+)
 
 ## compute predicted values and confidence bands
 horizon = 60
 ts_pred_lst = [jnp.arange(horizon + 1) + tt.max() for tt in ts_lst]
 ts_pred_lst_scaled = [(x - t_min) / (t_max - t_min) for x in ts_pred_lst]
-y_pred_lst = fj.fitted_values(ts_pred_lst_scaled, theta=solution.x, cities=cities, n_variants=len(variants2))
-y_pred_lst_confint = fj.get_confidence_bands_logit(solution.x, len(variants2), ts_pred_lst_scaled, covariance_scaled)
+y_pred_lst = fj.fitted_values(
+    ts_pred_lst_scaled, theta=solution.x, cities=cities, n_variants=len(variants2)
+)
+y_pred_lst_confint = fj.get_confidence_bands_logit(
+    solution.x, len(variants2), ts_pred_lst_scaled, covariance_scaled
+)
 
 
 # -
@@ -192,10 +196,10 @@ for i, city in enumerate(cities):
     # plot fitted and predicted values
     plot_fit(ax, ts_lst[i], y_fit_lst[i], variants, colors)
     plot_fit(ax, ts_pred_lst[i], y_pred_lst[i], variants, colors, linetype="--")
-    
+
     #     # plot 1-fitted and predicted values
     plot_complement(ax, ts_lst[i], y_fit_lst[i], variants)
-#     plot_complement(ax, ts_pred_lst[i], y_pred_lst[i], variants, linetype="--")
+    #     plot_complement(ax, ts_pred_lst[i], y_pred_lst[i], variants, linetype="--")
     # plot raw deconvolved values
     plot_data(ax, ts_lst[i], ys_lst2[i], variants, colors)
     # make confidence bands and plot them
@@ -205,21 +209,22 @@ for i, city in enumerate(cities):
         ts_lst[i],
         {"lower": conf_bands[0], "upper": conf_bands[1]},
         variants,
-        colors
+        colors,
     )
-    
+
     pred_bands = y_pred_lst_confint[i]
     plot_confidence_bands(
         ax,
         ts_pred_lst[i],
         {"lower": pred_bands[0], "upper": pred_bands[1]},
         variants,
-        colors
+        colors,
     )
 
     # format axes and title
     def format_date(x, pos):
         return plot_ts.num_to_date(x, date_min=start_date)
+
     date_formatter = ticker.FuncFormatter(format_date)
     ax.xaxis.set_major_formatter(date_formatter)
     tick_positions = [0, 0.5, 1]

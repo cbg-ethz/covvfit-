@@ -195,7 +195,8 @@ rule fit_to_bootstrapped_sample:
         boostrap_index = int(wildcards.bootstrap)
         key = jax.random.PRNGKey(boostrap_index)
 
-        data = []
+        ts_all = []
+        ys_all = []
 
         for city_index in range(settings.n_cities):
             subkey = jax.random.fold_in(key, city_index)
@@ -211,10 +212,12 @@ rule fit_to_bootstrapped_sample:
             ts_obs = ts_obs[index]
             ys_obs = ys_obs[index, :]
 
-            data.append(fj.CityData(ts=ts_obs, ys=ys_obs, n=1))  # Note that we use n = 1, as we do not know the true value
+            ts_all.append(ts_obs)
+            ys_all.append(ys_obs)
+
 
         # Note that we don't use any priors: we optimize just the (quasi-)likelihood
-        loss = fj.construct_total_loss(data)
+        loss = fj.construct_total_loss(ys=ys_all, ts=ts_all, accept_theta=True)
         theta0 = fj.construct_theta0(n_cities=settings.n_cities, n_variants=settings.n_variants)
 
         solution = fj.jax_multistart_minimize(

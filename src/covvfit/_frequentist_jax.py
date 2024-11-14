@@ -65,7 +65,7 @@ def loss(
     return -jnp.sum(n * y * logp, axis=-1)
 
 
-class CityData(NamedTuple):
+class REDUNDANTCityData(NamedTuple):
     ts: Float[Array, " timepoints"]
     ys: Float[Array, "timepoints variants"]
     n: _Float
@@ -79,8 +79,8 @@ def _add_first_variant(vec: Float[Array, " variants-1"]) -> Float[Array, " varia
     return jnp.concatenate((jnp.zeros(1, dtype=vec.dtype), vec))
 
 
-def construct_total_loss(
-    cities: Sequence[CityData],
+def REDUNDANT_construct_total_loss(
+    cities: Sequence[REDUNDANTCityData],
     average_loss: bool = False,
 ) -> Callable[[_ThetaType], _Float]:
     cities = tuple(cities)
@@ -674,7 +674,7 @@ def construct_model(
     return model
 
 
-def construct_total_loss_new(
+def construct_total_loss(
     ys: list[jax.Array],
     ts: list[jax.Array],
     ns: list[float] | float = 1.0,
