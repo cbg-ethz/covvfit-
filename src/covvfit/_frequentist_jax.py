@@ -23,6 +23,7 @@ def calculate_linear(
     return (ts[..., None]) * g + m
 
 
+
 _Float = float | Float[Array, " "]
 
 
