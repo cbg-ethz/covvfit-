@@ -1,7 +1,7 @@
 """Frequentist fitting functions powered by JAX."""
 
 import dataclasses
-from typing import Callable, NamedTuple, Sequence
+from typing import Callable, List, NamedTuple, Optional, Sequence, Tuple
 
 import jax
 import jax.numpy as jnp
@@ -19,8 +19,8 @@ def calculate_linear(
     m = midpoints.reshape(shape)
     g = growths.reshape(shape)
 
-    return (ts[..., None] - m) * g
-    # return (ts[..., None] ) * g + m
+    # return (ts[..., None] - m) * g
+    return (ts[..., None]) * g + m
 
 
 _Float = float | Float[Array, " "]
@@ -157,27 +157,187 @@ class StandardErrorsMultipliers(NamedTuple):
         return float(jax.scipy.stats.norm.ppf((1 + confidence) / 2))
 
 
+def get_covariance(
+    loss_fn: Callable[[_ThetaType], _Float],
+    theta: _ThetaType,
+) -> Float[Array, "(n_params n_params)"]:
+    """Calculates the covariance matrix of the parameters.
+
+    Args:
+        loss_fn: The loss function for which the covariance matrix is calculated.
+        theta: The optimized parameters at which to evaluate the Hessian.
+
+    Returns:
+        The covariance matrix, which is the inverse of the Hessian matrix.
+    """
+    hessian_matrix = jax.hessian(loss_fn)(theta)
+    covariance_matrix = jnp.linalg.inv(hessian_matrix)
+
+    return covariance_matrix
+
+
 def get_standard_errors(
-    jacobian: Float[Array, "*output_shape n_inputs"],
     covariance: Float[Array, "n_inputs n_inputs"],
+    jacobian: Optional[Float[Array, "*output_shape n_inputs"]] = None,
 ) -> Float[Array, " *output_shape"]:
     """Delta method to calculate standard errors of a function
     from `n_inputs` to `output_shape`.
 
     Args:
-        jacobian: Jacobian of the function to be fitted, shape (output_shape, n_inputs)
-        covariance: Covariance matrix of the inputs, shape (n_inputs, n_inputs)
+        jacobian: Jacobian of the function to be fitted, shape (output_shape, n_inputs).
+                  If None, uses an identity matrix with shape `(n_inputs, n_inputs)`.
+        covariance: Covariance matrix of the inputs, shape (n_inputs, n_inputs).
 
     Returns:
-        Standard errors of the fitted parameters, shape (output_shape,)
+        Standard errors of the fitted parameters, shape (output_shape,).
 
     Note:
         `output_shape` can be a vector, in which case the output is a vector
-        of standard errors or a tensor of any other shape,
-        in which case the output is a tensor of standard errors for each output
-        coordinate.
+        of standard errors, or a tensor of any other shape, in which case
+        the output is a tensor of standard errors for each output coordinate.
     """
+    # If jacobian is not provided, default to the identity matrix
+    if jacobian is None:
+        n_inputs = covariance.shape[0]
+        jacobian = jnp.eye(n_inputs)
+
     return jnp.sqrt(jnp.einsum("...L,KL,...K -> ...", jacobian, covariance, jacobian))
+
+
+def get_confidence_intervals(
+    estimates: Float[Array, " *output_shape"],
+    standard_errors: Float[Array, " *output_shape"],
+    confidence_level: float = 0.95,
+) -> tuple[Float[Array, " *output_shape"], Float[Array, " *output_shape"]]:
+    """Calculates confidence intervals for parameter estimates.
+
+    Args:
+        estimates: Estimated parameters, shape (output_shape,).
+        standard_errors: Standard errors of the estimates, shape (output_shape,).
+        confidence_level: Confidence level for the intervals (default is 0.95).
+
+    Returns:
+        A tuple of two arrays (lower_bound, upper_bound), each with shape (output_shape,)
+        representing the confidence interval for each estimate.
+
+    Note:
+        Assumes a normal distribution for the estimates.
+    """
+    # Calculate the multiplier based on the confidence level
+    z_score = jax.scipy.stats.norm.ppf((1 + confidence_level) / 2)
+
+    # Compute the lower and upper bounds of the confidence intervals
+    lower_bound = estimates - z_score * standard_errors
+    upper_bound = estimates + z_score * standard_errors
+
+    return lower_bound, upper_bound
+
+
+def fitted_values(
+    times: List[Float[Array, " timepoints"]],
+    theta: _ThetaType,
+    cities: list,
+    n_variants: int,
+) -> list[Float[Array, "variants-1 timepoints"]]:
+    """Generates the fitted values of a model based on softmax predictions.
+
+    Args:
+        times: A list of arrays, each containing timepoints for a city.
+        theta: Parameter array for the model.
+        cities: A list of city data objects (used only for iteration).
+        n_variants: The number of variants.
+
+
+    Returns:
+        A list of fitted values for each city, each array having shape (variants, timepoints).
+    """
+    y_fit_lst = [
+        get_softmax_predictions(
+            theta=theta, n_variants=n_variants, city_index=i, ts=times[i]
+        ).T[1:, :]
+        for i, _ in enumerate(cities)
+    ]
+
+    return y_fit_lst
+
+
+def create_logit_predictions_fn(
+    n_variants: int, city_index: int, ts: Float[Array, " timepoints"]
+) -> Callable[
+    [Float[Array, " (cities+1)*(variants-1)"]], Float[Array, "timepoints variants"]
+]:
+    """Creates a version of get_logit_predictions with fixed arguments.
+
+    Args:
+        n_variants: Number of variants.
+        city_index: Index of the city to consider.
+        ts: Array of timepoints.
+
+    Returns:
+        A function that takes only theta as input and returns logit predictions.
+    """
+
+    def logit_predictions_with_fixed_args(
+        theta: _ThetaType,
+    ):
+        return get_logit_predictions(
+            theta=theta, n_variants=n_variants, city_index=city_index, ts=ts
+        )[:, 1:]
+
+    return logit_predictions_with_fixed_args
+
+
+def get_confidence_bands_logit(
+    solution_x: Float[Array, " (cities+1)*(variants-1)"],
+    variants_count: int,
+    ts_lst_scaled: List[Float[Array, " timepoints"]],
+    covariance_scaled: Float[Array, "n_params n_params"],
+    confidence_level: float = 0.95,
+) -> List[tuple]:
+    """Computes confidence intervals for logit predictions using the Delta method,
+    back-transforms them to the linear scale
+
+    Args:
+        solution_x: Optimized parameters for the model.
+        variants_count: Number of variants.
+        ts_lst_scaled: List of timepoint arrays for each city.
+        covariance_scaled: Covariance matrix for the parameters.
+        confidence_level: Desired confidence level for intervals (default is 0.95).
+
+    Returns:
+        A list of dictionaries for each city, each with "lower" and "upper" bounds
+        for the confidence intervals on the linear scale.
+    """
+
+    y_fit_lst_logit = [
+        get_logit_predictions(solution_x, variants_count, i, ts).T[1:, :]
+        for i, ts in enumerate(ts_lst_scaled)
+    ]
+
+    y_fit_lst_logit_se = []
+    for i, ts in enumerate(ts_lst_scaled):
+        # Compute the Jacobian of the transformation and project standard errors
+        jacobian = jax.jacobian(create_logit_predictions_fn(variants_count, i, ts))(
+            solution_x
+        )
+        standard_errors = get_standard_errors(
+            jacobian=jacobian, covariance=covariance_scaled
+        ).T
+        y_fit_lst_logit_se.append(standard_errors)
+
+    # Compute confidence intervals on the logit scale
+    y_fit_lst_logit_confint = [
+        get_confidence_intervals(fitted, se, confidence_level=confidence_level)
+        for fitted, se in zip(y_fit_lst_logit, y_fit_lst_logit_se)
+    ]
+
+    # Project confidence intervals to the linear scale
+    y_fit_lst_logit_confint_expit = [
+        (jax.scipy.special.expit(confint[0]), jax.scipy.special.expit(confint[1]))
+        for confint in y_fit_lst_logit_confint
+    ]
+
+    return y_fit_lst_logit_confint_expit
 
 
 def triangular_mask(n_variants, valid_value: float = 0, masked_value: float = jnp.nan):
