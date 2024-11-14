@@ -1,7 +1,7 @@
 """Frequentist fitting functions powered by JAX."""
 
 import dataclasses
-from typing import Callable, List, NamedTuple, Optional, Sequence
+from typing import Callable, NamedTuple, Sequence
 
 import jax
 import jax.numpy as jnp
@@ -181,7 +181,7 @@ def get_covariance(
 
 def get_standard_errors(
     covariance: Float[Array, "n_inputs n_inputs"],
-    jacobian: Optional[Float[Array, "*output_shape n_inputs"]] = None,
+    jacobian: Float[Array, "*output_shape n_inputs"] | None = None,
 ) -> Float[Array, " *output_shape"]:
     """Delta method to calculate standard errors of a function
     from `n_inputs` to `output_shape`.
@@ -237,7 +237,7 @@ def get_confidence_intervals(
 
 
 def fitted_values(
-    times: List[Float[Array, " timepoints"]],
+    times: list[Float[Array, " timepoints"]],
     theta: _ThetaType,
     cities: list,
     n_variants: int,
@@ -293,10 +293,10 @@ def create_logit_predictions_fn(
 def get_confidence_bands_logit(
     solution_x: Float[Array, " (cities+1)*(variants-1)"],
     variants_count: int,
-    ts_lst_scaled: List[Float[Array, " timepoints"]],
+    ts_lst_scaled: list[Float[Array, " timepoints"]],
     covariance_scaled: Float[Array, "n_params n_params"],
     confidence_level: float = 0.95,
-) -> List[tuple]:
+) -> list[tuple]:
     """Computes confidence intervals for logit predictions using the Delta method,
     back-transforms them to the linear scale
 
