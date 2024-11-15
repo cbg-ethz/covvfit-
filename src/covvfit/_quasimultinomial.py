@@ -611,8 +611,8 @@ def _generate_quasiloglikelihood_function(
 def construct_model(
     ys: list[jax.Array],
     ts: list[jax.Array],
-    ns: Float[Array, " cities"] | list[float] | float = 1.0,
-    overdispersion: Float[Array, " cities"] | list[float] | float = 1.0,
+    ns: _OverDispersionType,
+    overdispersion: _OverDispersionType,
     sigma_growth: float = 10.0,
     sigma_offset: float = 1000.0,
 ) -> Callable:
@@ -678,8 +678,8 @@ def construct_model(
 def construct_total_loss(
     ys: list[jax.Array],
     ts: list[jax.Array],
-    ns: list[float] | float = 1.0,
-    overdispersion: list[float] | float = 1.0,
+    ns: _OverDispersionType,
+    overdispersion: _OverDispersionType,
     accept_theta: bool = True,
     average_loss: bool = False,
 ) -> Callable[[_ThetaType], _Float] | _RelativeGrowthsAndOffsetsFunction:
