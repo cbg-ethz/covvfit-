@@ -734,10 +734,10 @@ def construct_total_loss(
         return _loss_fn
 
 
-def compute_alleged_pearson_residuals(
+def compute_alleged_squared_pearson_residuals(
     observed: list[Float[Array, "timepoints variants"]],
     predicted: list[Float[Array, "timepoints variants"]],
-    sample_sizes: _OverDispersionType,
+    sample_sizes: _OverDispersionType = 1.0,
 ) -> list[Float[Array, "timepoints variants"]]:
     n_cities = len(observed)
     if len(predicted) != n_cities:
@@ -763,15 +763,16 @@ def compute_alleged_pearson_residuals(
     ]
 
 
+class OverDispersion(NamedTuple):
+    overall: Float[Array, " "]
+    cities: Float[Array, " cities"]
+
+
 def compute_overdispersion(
-    ys_lst: list[Float[Array, "timepoints variants"]],
-    y_fit_lst: list[Float[Array, "timepoints variants"]],
-    cities: list,
-) -> tuple[
-    list[Float[Array, "timepoints variants"]],
-    Float[Array, " cities"],
-    Float[Array, " "],
-]:
+    observed: list[Float[Array, "timepoints variants"]],
+    predicted: list[Float[Array, "timepoints variants"]],
+    sample_sizes: _OverDispersionType = 1.0,
+) -> OverDispersion:
     """
     Compute overdispersion from a quasimultinomial model.
 
@@ -780,26 +781,34 @@ def compute_overdispersion(
                 each with shape (timepoints, variants).
         y_fit_lst: A list of fitted variant proportions for each city,
                    each with shape (timepoints, variants).
-        cities: A list of city identifiers (used only for iteration).
 
     Returns:
-        A tuple containing:
-        - A list of Pearson residuals for each city.
-        - An array of overdispersion values for each city.
-        - A single value of fixed overdispersion across all cities.
+        A single value of fixed overdispersion across all cities.
+        An array of overdispersion values for each city.
     """
-    # Compute Pearson residuals for each city
-    pearson_r_lst = [
-        (y_fit_lst[k] - ys_lst[k]) ** 2 / (y_fit_lst[k] * (1 - y_fit_lst[k]))
-        for k, city in enumerate(cities)
-    ]
+    squared_pearson_statistics = compute_alleged_squared_pearson_residuals(
+        observed=observed,
+        predicted=predicted,
+        sample_sizes=sample_sizes,
+    )
+    n_cities = len(observed)
+    n_variants = observed[0].shape[1]
 
-    # Compute overdispersion for each city
-    overdisp_list2 = [r.sum() / (r.shape[0] * (r.shape[1] - 1)) for r in pearson_r_lst]
+    # Calculate it for each city
+    per_city = []
+    for values in squared_pearson_statistics:
+        n_timepoints = values.shape[0]
+        val = jnp.sum(values) / (n_timepoints * (n_variants - 1) - 2 * (n_variants - 1))
+        per_city.append(val)
 
-    # Compute fixed overdispersion across all cities
-    total_residuals = jnp.concatenate(pearson_r_lst, axis=1).sum()
-    total_degrees_of_freedom = sum(r.shape[0] * (r.shape[1] - 1) for r in pearson_r_lst)
-    overdisp_fixed = total_residuals / total_degrees_of_freedom
+    total_pearson_statistics = sum(
+        [jnp.sum(values) for values in squared_pearson_statistics]
+    )
+    all_timepoints = sum([values.shape[0] for values in squared_pearson_statistics])
+    ddof = n_cities * (n_variants - 1) + (n_variants - 1)
+    psi = total_pearson_statistics / (all_timepoints * (n_variants - 1) - ddof)
 
-    return pearson_r_lst, overdisp_list2, overdisp_fixed
+    return OverDispersion(
+        cities=jnp.array(per_city, dtype=float),
+        overall=psi,
+    )
