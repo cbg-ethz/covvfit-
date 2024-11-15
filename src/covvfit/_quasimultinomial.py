@@ -735,13 +735,31 @@ def construct_total_loss(
 
 
 def compute_alleged_pearson_residuals(
-    ys_lst: list[Float[Array, "timepoints variants"]],
-    y_fit_lst: list[Float[Array, "timepoints variants"]],
-    ns_lst: _OverDispersionType,
+    observed: list[Float[Array, "timepoints variants"]],
+    predicted: list[Float[Array, "timepoints variants"]],
+    sample_sizes: _OverDispersionType,
 ) -> list[Float[Array, "timepoints variants"]]:
-    [
-        (ys_lst[i] - y_fit_lst[i]) ** 2 / (y_fit_lst[i] * (1 - y_fit_lst[i]))
-        for i, _ in enumerate(ys_lst)
+    n_cities = len(observed)
+    if len(predicted) != n_cities:
+        raise ValueError("Wrong number of cities")
+    lengths = []
+    for obs, pre in zip(observed, predicted):
+        if len(obs) != len(pre):
+            raise ValueError(f"Length mismatch {len(obs)} != {len(pre)}.")
+        lengths.append(len(obs))
+
+    ns_array = create_padded_array(
+        values=sample_sizes,
+        lengths=lengths,
+        padding_length=max(lengths),
+        padding_value=-1.0,
+    )
+    sample_sizes = [array[:length] for array, length in zip(ns_array, lengths)]
+    # Now sample_sizes has the same number of timepoints as predicted and observed
+
+    return [
+        ns[:, None] * jnp.square(obs - pre) / (pre * (1 - pre))
+        for obs, pre, ns in zip(observed, predicted, sample_sizes)
     ]
 
 
