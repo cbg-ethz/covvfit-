@@ -707,7 +707,6 @@ def construct_total_loss(
         return _loss_fn_theta
     else:
         return _loss_fn
-    
 
 
 def compute_overdispersion(
@@ -716,8 +715,8 @@ def compute_overdispersion(
     cities: list,
 ) -> tuple[
     list[Float[Array, "timepoints variants"]],
-    Float[Array, "cities"],
-    Float[Array, ""],
+    Float[Array, " cities"],
+    Float[Array, " "],
 ]:
     """
     Compute overdispersion from a quasimultinomial model.
@@ -742,15 +741,11 @@ def compute_overdispersion(
     ]
 
     # Compute overdispersion for each city
-    overdisp_list2 = [
-        r.sum() / (r.shape[0] * (r.shape[1] - 1)) for r in pearson_r_lst
-    ]
+    overdisp_list2 = [r.sum() / (r.shape[0] * (r.shape[1] - 1)) for r in pearson_r_lst]
 
     # Compute fixed overdispersion across all cities
     total_residuals = jnp.concatenate(pearson_r_lst, axis=1).sum()
-    total_degrees_of_freedom = sum(
-        r.shape[0] * (r.shape[1] - 1) for r in pearson_r_lst
-    )
+    total_degrees_of_freedom = sum(r.shape[0] * (r.shape[1] - 1) for r in pearson_r_lst)
     overdisp_fixed = total_residuals / total_degrees_of_freedom
 
     return pearson_r_lst, overdisp_list2, overdisp_fixed

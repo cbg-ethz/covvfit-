@@ -54,5 +54,8 @@ def make_data_list(
     ys_lst = [
         df[(df.city == city)][variants].values.T for city in cities
     ]  # pyright: ignore
-
-    return (ts_lst, ys_lst)
+    if "count_sum" in df.columns:
+        ns_lst = [df[(df.city == city)].count_sum.values for city in cities]
+        return (ts_lst, ys_lst, ns_lst)
+    else:
+        return (ts_lst, ys_lst)

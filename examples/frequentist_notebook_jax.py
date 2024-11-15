@@ -36,7 +36,7 @@ import covvfit.plotting._timeseries as plot_ts
 
 from covvfit import quasimultinomial as qm
 
-import numpyro 
+import numpyro
 
 # -
 
