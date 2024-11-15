@@ -734,6 +734,17 @@ def construct_total_loss(
         return _loss_fn
 
 
+def compute_alleged_pearson_residuals(
+    ys_lst: list[Float[Array, "timepoints variants"]],
+    y_fit_lst: list[Float[Array, "timepoints variants"]],
+    ns_lst: _OverDispersionType,
+) -> list[Float[Array, "timepoints variants"]]:
+    [
+        (ys_lst[i] - y_fit_lst[i]) ** 2 / (y_fit_lst[i] * (1 - y_fit_lst[i]))
+        for i, _ in enumerate(ys_lst)
+    ]
+
+
 def compute_overdispersion(
     ys_lst: list[Float[Array, "timepoints variants"]],
     y_fit_lst: list[Float[Array, "timepoints variants"]],
