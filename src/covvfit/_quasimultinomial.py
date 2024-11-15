@@ -542,18 +542,27 @@ def _validate_and_pad(
     )
 
     # Now create the arrays representing the data
-    out_ts = jnp.zeros((n_cities, max_timepoints))  # Pad with zeros
-    out_mask = jnp.zeros((n_cities, max_timepoints))  # Pad with zeros
+    out_ts = _create_padded_array(
+        values=ts,
+        expected_lengths=_lengths,
+        padding_length=max_timepoints,
+        padding_value=0.0,
+    )
+    out_mask = _create_padded_array(
+        values=1.0,
+        expected_lengths=_lengths,
+        padding_length=max_timepoints,
+        padding_value=0.0,
+    )
+
+    # Create the array with variant proportions, padded with constant vectors
     out_ys = jnp.full(
         shape=(n_cities, max_timepoints, n_variants), fill_value=1.0 / n_variants
-    )  # Pad with constant vectors
+    )
 
-    for i, (t, y) in enumerate(zip(ts, ys)):
-        n_timepoints = t.shape[0]
-
-        out_ts = out_ts.at[i, :n_timepoints].set(t)
+    for i, y in enumerate(ys):
+        n_timepoints = y.shape[0]
         out_ys = out_ys.at[i, :n_timepoints, :].set(y)
-        out_mask = out_mask.at[i, :n_timepoints].set(1)
 
     return _ProblemData(
         n_cities=n_cities,
