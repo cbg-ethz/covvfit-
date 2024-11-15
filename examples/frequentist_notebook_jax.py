@@ -6,11 +6,11 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.16.1
+#       jupytext_version: 1.16.4
 #   kernelspec:
-#     display_name: Python 3 (ipykernel)
+#     display_name: jax
 #     language: python
-#     name: python3
+#     name: jax
 # ---
 
 # +
@@ -36,14 +36,16 @@ import covvfit.plotting._timeseries as plot_ts
 
 from covvfit import quasimultinomial as qm
 
+import numpyro 
+
 # -
 
 
 # # Load and preprocess data
 
 # +
-DATA_PATH = "../new_data/deconvolved.csv"
-VAR_DATES_PATH = "../new_data/var_dates.yaml"
+DATA_PATH = "../../LolliPop/lollipop_covvfit/deconvolved.csv"
+VAR_DATES_PATH = "../../LolliPop/lollipop_covvfit/var_dates.yaml"
 
 data = pd.read_csv(DATA_PATH, sep="\t")
 data.head()
@@ -148,7 +150,7 @@ covariance = qm.get_covariance(loss, solution.x)
 
 ## compute overdispersion
 # TODO(Pawel, David): Port compute_overdispersion to `qm`
-pearson_r_lst, overdisp_list, overdisp_fixed = freq.compute_overdispersion(
+pearson_r_lst, overdisp_list, overdisp_fixed = qm.compute_overdispersion(
     ys_lst2, y_fit_lst, cities
 )
 
@@ -238,4 +240,3 @@ for i, city in enumerate(cities):
 
 fig.tight_layout()
 fig.show()
-# -
