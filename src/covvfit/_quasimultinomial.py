@@ -199,7 +199,7 @@ def fitted_values(
     theta: _ThetaType,
     cities: list,
     n_variants: int,
-) -> list[Float[Array, "variants-1 timepoints"]]:
+) -> list[Float[Array, "timepoints variants"]]:
     """Generates the fitted values of a model based on softmax predictions.
 
     Args:
@@ -210,12 +210,12 @@ def fitted_values(
 
 
     Returns:
-        A list of fitted values for each city, each array having shape (variants, timepoints).
+        A list of fitted values for each city, each array having shape (timepoints, variants).
     """
     y_fit_lst = [
         get_softmax_predictions(
             theta=theta, n_variants=n_variants, city_index=i, ts=times[i]
-        ).T[1:, :]
+        )
         for i, _ in enumerate(cities)
     ]
 
