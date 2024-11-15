@@ -8,8 +8,10 @@ import jax.numpy as jnp
 import numpy as np
 import numpyro
 import numpyro.distributions as distrib
-from jaxtyping import Array, Float
+from jaxtyping import Array, Bool, Float
 from scipy import optimize
+
+from covvfit._padding import create_padded_array
 
 
 def calculate_linear(
@@ -420,24 +422,29 @@ class _ProblemData(NamedTuple):
             for timepoints where there is no measurement for a particular city
         mask: array of shape (cities, timepoints) with 0 when there is
             no measurement for a particular city and 1 otherwise
-        n_quasimul: quasimultinomial number of trials for each city
-        overdispersion: overdispersion factor for each city
+        n_quasimul: quasimultinomial number of trials for each city and timepoint
+        overdispersion: overdispersion factor for each city and timepoint
     """
 
     n_cities: int
     n_variants: int
     ts: Float[Array, "cities timepoints"]
     ys: Float[Array, "cities timepoints variants"]
-    mask: Float[Array, "cities timepoints"]
-    n_quasimul: Float[Array, " cities"]
-    overdispersion: Float[Array, " cities"]
+    mask: Bool[Array, "cities timepoints"]
+    n_quasimul: Float[Array, "cities timepoints"]
+    overdispersion: Float[Array, "cities timepoints"]
+
+
+_OverDispersionType = (
+    float | list[float] | list[jax.Array] | list[list[float]] | Float[Array, " cities"]
+)
 
 
 def _validate_and_pad(
     ys: list[jax.Array],
     ts: list[jax.Array],
-    ns_quasimul: Float[Array, " cities"] | list[float] | float = 1.0,
-    overdispersion: Float[Array, " cities"] | list[float] | float = 1.0,
+    ns_quasimul: _OverDispersionType,
+    overdispersion: _OverDispersionType,
 ) -> _ProblemData:
     """Validation function, parsing the input provided in
     the format convenient for the user to the internal
@@ -446,21 +453,8 @@ def _validate_and_pad(
     n_cities = len(ys)
     if len(ts) != n_cities:
         raise ValueError(f"Number of cities not consistent: {len(ys)} != {len(ts)}.")
-
-    # Create arrays representing `n` and `overdispersion`
-    if hasattr(ns_quasimul, "__len__"):
-        if len(ns_quasimul) != n_cities:
-            raise ValueError(
-                f"Provided `ns_quasimul` has length {len(ns_quasimul)} rather than {n_cities}."
-            )
-    if hasattr(overdispersion, "__len__"):
-        if len(overdispersion) != n_cities:
-            raise ValueError(
-                f"Provided `overdispersion` has length {len(overdispersion)} rather than {n_cities}."
-            )
-
-    out_n = jnp.asarray(ns_quasimul) * jnp.ones(n_cities, dtype=float)
-    out_overdispersion = jnp.asarray(overdispersion) * jnp.ones_like(out_n)
+    if n_cities < 1:
+        raise ValueError("There has to be at least one city.")
 
     # Get the number of variants
     n_variants = ys[0].shape[-1]
@@ -472,7 +466,7 @@ def _validate_and_pad(
                 f"City {i} has {y.shape[-1]} variants rather than {n_variants}."
             )
 
-    # Ensure that the number of timepoints is consistent
+    # Ensure that the number of timepoints is consistent for t and y
     max_timepoints = 0
     for i, (t, y) in enumerate(zip(ts, ys)):
         if t.ndim != 1:
@@ -484,21 +478,45 @@ def _validate_and_pad(
                 f"City {i} has timepoints mismatch: {t.shape[0]} != {y.shape[0]}."
             )
 
-        max_timepoints = t.shape[0]
+        max_timepoints = max(max_timepoints, t.shape[0])
+
+    _lengths = [t.shape[0] for t in ts]
+    out_n = create_padded_array(
+        values=ns_quasimul,
+        lengths=_lengths,
+        padding_length=max_timepoints,
+        padding_value=0.0,
+    )
+    out_overdispersion = create_padded_array(
+        values=overdispersion,
+        lengths=_lengths,
+        padding_length=max_timepoints,
+        padding_value=1.0,  # Use 1.0 as we divide by it and want to avoid NaNs
+    )
 
     # Now create the arrays representing the data
-    out_ts = jnp.zeros((n_cities, max_timepoints))  # Pad with zeros
-    out_mask = jnp.zeros((n_cities, max_timepoints))  # Pad with zeros
+    out_ts = create_padded_array(
+        values=ts,
+        lengths=_lengths,
+        padding_length=max_timepoints,
+        padding_value=0.0,
+    )
+    out_mask = create_padded_array(
+        values=1,
+        lengths=_lengths,
+        padding_length=max_timepoints,
+        padding_value=0,
+        _out_dtype=bool,
+    )
+
+    # Create the array with variant proportions, padded with constant vectors
     out_ys = jnp.full(
         shape=(n_cities, max_timepoints, n_variants), fill_value=1.0 / n_variants
-    )  # Pad with constant vectors
+    )
 
-    for i, (t, y) in enumerate(zip(ts, ys)):
-        n_timepoints = t.shape[0]
-
-        out_ts = out_ts.at[i, :n_timepoints].set(t)
+    for i, y in enumerate(ys):
+        n_timepoints = y.shape[0]
         out_ys = out_ys.at[i, :n_timepoints, :].set(y)
-        out_mask = out_mask.at[i, :n_timepoints].set(1)
 
     return _ProblemData(
         n_cities=n_cities,
@@ -517,16 +535,19 @@ def _quasiloglikelihood_single_city(
     ts: Float[Array, " timepoints"],
     ys: Float[Array, "timepoints variants"],
     mask: Float[Array, " timepoints"],
-    n_quasimul: float,
-    overdispersion: float,
+    n_quasimul: Float[Array, " timepoints"],
+    overdispersion: Float[Array, " timepoints"],
 ) -> float:
-    weight = n_quasimul / overdispersion
     logps = calculate_logps(
         ts=ts,
         midpoints=_add_first_variant(relative_offsets),
         growths=_add_first_variant(relative_growths),
     )
-    return jnp.sum(mask[:, None] * weight * ys * logps)
+    # Ensure compatible shapes:
+    mask = jnp.asarray(mask, dtype=float)[:, None]
+    weight = (n_quasimul / overdispersion)[:, None]
+
+    return jnp.sum(mask * weight * ys * logps)
 
 
 _RelativeGrowthsAndOffsetsFunction = Callable[
@@ -571,24 +592,26 @@ def _generate_quasiloglikelihood_function(
 def construct_model(
     ys: list[jax.Array],
     ts: list[jax.Array],
-    ns: Float[Array, " cities"] | list[float] | float = 1.0,
-    overdispersion: Float[Array, " cities"] | list[float] | float = 1.0,
+    ns: _OverDispersionType = 1.0,
+    overdispersion: _OverDispersionType = 1.0,
     sigma_growth: float = 10.0,
     sigma_offset: float = 1000.0,
 ) -> Callable:
     """Builds a NumPyro model suitable for sampling from the quasiposterior.
 
     Args:
-        ys: list of variant proportions for each city.
+        ys: list of variant proportions array for each city.
             The ith entry should be an array
             of shape (n_timepoints[i], n_variants)
-        ts: list of timepoints. The ith entry should be an array
+        ts: list of timepoint arrays. The ith entry should be an array
             of shape (n_timepoints[i],)
             Note: `ts` should be appropriately normalized
-        ns: controls the overdispersion of each city by means of
-            quasimultinomial sample size
+        ns: controls the quasimultinomial sample size of each city. It can be:
+              - a single float (sample size is constant across all cities and timepoints)
+              - a sequence of floats, describing one sample size for each city
+              - a list of arrays, with the `i`th entry having length `n_timepoints[i]`
         overdispersion: controls the overdispersion factor as in the
-            quasilikelihood approach
+            quasilikelihood approach. The shape restrictions are the same as in `ns`.
         sigma_growth: controls the standard deviation of the prior
             on the relative growths
         sigma_offset: controls the standard deviation of the prior
@@ -638,8 +661,8 @@ def construct_model(
 def construct_total_loss(
     ys: list[jax.Array],
     ts: list[jax.Array],
-    ns: list[float] | float = 1.0,
-    overdispersion: list[float] | float = 1.0,
+    ns: _OverDispersionType = 1.0,
+    overdispersion: _OverDispersionType = 1.0,
     accept_theta: bool = True,
     average_loss: bool = False,
 ) -> Callable[[_ThetaType], _Float] | _RelativeGrowthsAndOffsetsFunction:
@@ -652,10 +675,12 @@ def construct_total_loss(
         ts: list of timepoints. The ith entry should be an array
             of shape (n_timepoints[i],)
             Note: `ts` should be appropriately normalized
-        ns: controls the overdispersion of each city by means of
-            quasimultinomial sample size
+        ns: controls the quasimultinomial sample size of each city. It can be:
+              - a single float (sample size is constant across all cities and timepoints)
+              - a sequence of floats, describing one sample size for each city
+              - a list of arrays, with the `i`th entry having length `n_timepoints[i]`
         overdispersion: controls the overdispersion factor as in the
-            quasilikelihood approach
+            quasilikelihood approach. The shape restrictions are the same as in `ns`.
         accept_theta: whether the returned loss function should accept the
             `theta` vector (suitable for optimization)
             or should be parameterized by the relative growths
