@@ -420,8 +420,8 @@ class _ProblemData(NamedTuple):
             for timepoints where there is no measurement for a particular city
         mask: array of shape (cities, timepoints) with 0 when there is
             no measurement for a particular city and 1 otherwise
-        n_quasimul: quasimultinomial number of trials for each city
-        overdispersion: overdispersion factor for each city
+        n_quasimul: quasimultinomial number of trials for each city and timepoint
+        overdispersion: overdispersion factor for each city and timepoint
     """
 
     n_cities: int
@@ -429,15 +429,54 @@ class _ProblemData(NamedTuple):
     ts: Float[Array, "cities timepoints"]
     ys: Float[Array, "cities timepoints variants"]
     mask: Float[Array, "cities timepoints"]
-    n_quasimul: Float[Array, " cities"]
-    overdispersion: Float[Array, " cities"]
+    n_quasimul: Float[Array, "cities timepoints"]
+    overdispersion: Float[Array, "cities timepoints"]
+
+
+_OverDispersionType = (
+    float | list[float] | list[jax.Array] | list[list[float]] | Float[Array, " cities"]
+)
+
+
+def _create_padded_array(
+    values: _OverDispersionType,
+    expected_lengths: list[int],
+    padding_length: int,
+    padding_value: float,
+) -> Float[Array, "n_cities padding_length"]:
+    n_cities = len(expected_lengths)
+    if n_cities < 1:
+        raise ValueError("There has to be at least one city.")
+    if max(expected_lengths) > padding_length:
+        raise ValueError(
+            f"Maximum length is {max(expected_lengths)}, which is greater than the padding {padding_length}."
+        )
+
+    out_array = jnp.full(shape=(n_cities, padding_length), fill_value=padding_value)
+
+    # First case: `values` argument is a single number (not an iterable)
+    if not hasattr(values, "__len__"):
+        for i, length in enumerate(expected_lengths):
+            out_array = out_array.at[i, :length].set(values)
+        return out_array
+
+    # Second case: `values` argument is an iterable
+    if len(values) != n_cities:
+        raise ValueError(
+            f"Provided list has length {len(values)} rather than {n_cities}."
+        )
+
+    for i, (value, exp_len) in enumerate(zip(values, expected_lengths)):
+        pass
+
+    raise NotImplementedError
 
 
 def _validate_and_pad(
     ys: list[jax.Array],
     ts: list[jax.Array],
-    ns_quasimul: Float[Array, " cities"] | list[float] | float = 1.0,
-    overdispersion: Float[Array, " cities"] | list[float] | float = 1.0,
+    ns_quasimul: _OverDispersionType,
+    overdispersion: _OverDispersionType,
 ) -> _ProblemData:
     """Validation function, parsing the input provided in
     the format convenient for the user to the internal
@@ -446,21 +485,8 @@ def _validate_and_pad(
     n_cities = len(ys)
     if len(ts) != n_cities:
         raise ValueError(f"Number of cities not consistent: {len(ys)} != {len(ts)}.")
-
-    # Create arrays representing `n` and `overdispersion`
-    if hasattr(ns_quasimul, "__len__"):
-        if len(ns_quasimul) != n_cities:
-            raise ValueError(
-                f"Provided `ns_quasimul` has length {len(ns_quasimul)} rather than {n_cities}."
-            )
-    if hasattr(overdispersion, "__len__"):
-        if len(overdispersion) != n_cities:
-            raise ValueError(
-                f"Provided `overdispersion` has length {len(overdispersion)} rather than {n_cities}."
-            )
-
-    out_n = jnp.asarray(ns_quasimul) * jnp.ones(n_cities, dtype=float)
-    out_overdispersion = jnp.asarray(overdispersion) * jnp.ones_like(out_n)
+    if n_cities < 1:
+        raise ValueError("There has to be at least one city.")
 
     # Get the number of variants
     n_variants = ys[0].shape[-1]
@@ -472,7 +498,7 @@ def _validate_and_pad(
                 f"City {i} has {y.shape[-1]} variants rather than {n_variants}."
             )
 
-    # Ensure that the number of timepoints is consistent
+    # Ensure that the number of timepoints is consistent for t and y
     max_timepoints = 0
     for i, (t, y) in enumerate(zip(ts, ys)):
         if t.ndim != 1:
@@ -484,7 +510,21 @@ def _validate_and_pad(
                 f"City {i} has timepoints mismatch: {t.shape[0]} != {y.shape[0]}."
             )
 
-        max_timepoints = t.shape[0]
+        max_timepoints = max(max_timepoints, t.shape[0])
+
+    _lengths = [t.shape[0] for t in ts]
+    out_n = _create_padded_array(
+        values=ns_quasimul,
+        expected_lengths=_lengths,
+        padding_length=max_timepoints,
+        padding_value=0.0,
+    )
+    out_overdispersion = _create_padded_array(
+        values=overdispersion,
+        expected_lengths=_lengths,
+        padding_length=max_timepoints,
+        padding_value=1.0,  # Use 1.0 as we divide by it and want to avoid NaNs
+    )
 
     # Now create the arrays representing the data
     out_ts = jnp.zeros((n_cities, max_timepoints))  # Pad with zeros
@@ -517,8 +557,8 @@ def _quasiloglikelihood_single_city(
     ts: Float[Array, " timepoints"],
     ys: Float[Array, "timepoints variants"],
     mask: Float[Array, " timepoints"],
-    n_quasimul: float,
-    overdispersion: float,
+    n_quasimul: Float[Array, " timepoints"],
+    overdispersion: Float[Array, " timepoints"],
 ) -> float:
     weight = n_quasimul / overdispersion
     logps = calculate_logps(
@@ -526,7 +566,7 @@ def _quasiloglikelihood_single_city(
         midpoints=_add_first_variant(relative_offsets),
         growths=_add_first_variant(relative_growths),
     )
-    return jnp.sum(mask[:, None] * weight * ys * logps)
+    return jnp.sum(mask[:, None] * weight[:, None] * ys * logps)
 
 
 _RelativeGrowthsAndOffsetsFunction = Callable[
