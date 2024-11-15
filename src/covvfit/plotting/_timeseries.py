@@ -65,7 +65,7 @@ def num_to_date(num, date_min, pos=None, fmt="%b. '%y"):
     return date.strftime(fmt)
 
 
-def plot_fit(ax, ts, y_fit, variants, colors, linetype="-"):
+def plot_fit(ax, ts, y_fit, variants, colors, linetype="-", **kwargs):
     """
     Function to plot fitted values with customizable line type.
 
@@ -85,6 +85,7 @@ def plot_fit(ax, ts, y_fit, variants, colors, linetype="-"):
             color=colors[i],
             linestyle=linetype,
             label=f"fit {variant}",
+            **kwargs,
         )
 
 

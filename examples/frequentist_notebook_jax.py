@@ -30,11 +30,12 @@ from scipy.stats import norm
 
 import yaml
 
-import covvfit._frequentist as freq
 import covvfit._preprocess_abundances as prec
 import covvfit.plotting._timeseries as plot_ts
 
 from covvfit import quasimultinomial as qm
+
+import numpyro
 
 # -
 
@@ -42,8 +43,12 @@ from covvfit import quasimultinomial as qm
 # # Load and preprocess data
 
 # +
+DATA_PATH = "../../LolliPop/lollipop_covvfit/deconvolved.csv"
+VAR_DATES_PATH = "../../LolliPop/lollipop_covvfit/var_dates.yaml"
+
 DATA_PATH = "../new_data/deconvolved.csv"
 VAR_DATES_PATH = "../new_data/var_dates.yaml"
+
 
 data = pd.read_csv(DATA_PATH, sep="\t")
 data.head()
@@ -118,12 +123,14 @@ ts_lst_scaled = [(x - t_min) / (t_max - t_min) for x in ts_lst]
 # +
 # %%time
 
+# Recall that the input should be (n_timepoints, n_variants)
+# TODO(Pawel, David): Resolve Issue https://github.com/cbg-ethz/covvfit/issues/24
+observed_data = [y.T for y in ys_lst]
+
 
 # no priors
 loss = qm.construct_total_loss(
-    ys=[
-        y.T for y in ys_lst
-    ],  # Recall that the input should be (n_timepoints, n_variants)
+    ys=observed_data,
     ts=ts_lst_scaled,
     average_loss=False,  # Do not average the loss over the data points, so that the covariance matrix shrinks with more and more data added
 )
@@ -139,19 +146,26 @@ solution = qm.jax_multistart_minimize(loss, theta0, n_starts=10)
 
 # +
 ## compute fitted values
-y_fit_lst = qm.fitted_values(
+fitted_values = qm.fitted_values(
     ts_lst_scaled, theta=solution.x, cities=cities, n_variants=len(variants2)
 )
+
+# ... and because of https://github.com/cbg-ethz/covvfit/issues/24
+# we need to transpose again
+y_fit_lst = [y.T[1:] for y in fitted_values]
 
 ## compute covariance matrix
 covariance = qm.get_covariance(loss, solution.x)
 
-## compute overdispersion
-# TODO(Pawel, David): Port compute_overdispersion to `qm`
-pearson_r_lst, overdisp_list, overdisp_fixed = freq.compute_overdispersion(
-    ys_lst2, y_fit_lst, cities
+overdispersion_tuple = qm.compute_overdispersion(
+    observed=observed_data,
+    predicted=fitted_values,
 )
 
+overdisp_fixed = overdispersion_tuple.overall
+
+
+# +
 ## scale covariance by overdisp
 covariance_scaled = overdisp_fixed * covariance
 
@@ -168,9 +182,14 @@ y_fit_lst_confint = qm.get_confidence_bands_logit(
 horizon = 60
 ts_pred_lst = [jnp.arange(horizon + 1) + tt.max() for tt in ts_lst]
 ts_pred_lst_scaled = [(x - t_min) / (t_max - t_min) for x in ts_pred_lst]
+
 y_pred_lst = qm.fitted_values(
     ts_pred_lst_scaled, theta=solution.x, cities=cities, n_variants=len(variants2)
 )
+# ... and because of https://github.com/cbg-ethz/covvfit/issues/24
+# we need to transpose again
+y_pred_lst = [y.T[1:] for y in y_pred_lst]
+
 y_pred_lst_confint = qm.get_confidence_bands_logit(
     solution.x, len(variants2), ts_pred_lst_scaled, covariance_scaled
 )

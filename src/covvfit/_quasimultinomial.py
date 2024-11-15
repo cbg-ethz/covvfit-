@@ -199,7 +199,7 @@ def fitted_values(
     theta: _ThetaType,
     cities: list,
     n_variants: int,
-) -> list[Float[Array, "variants-1 timepoints"]]:
+) -> list[Float[Array, "timepoints variants"]]:
     """Generates the fitted values of a model based on softmax predictions.
 
     Args:
@@ -210,12 +210,12 @@ def fitted_values(
 
 
     Returns:
-        A list of fitted values for each city, each array having shape (variants, timepoints).
+        A list of fitted values for each city, each array having shape (timepoints, variants).
     """
     y_fit_lst = [
         get_softmax_predictions(
             theta=theta, n_variants=n_variants, city_index=i, ts=times[i]
-        ).T[1:, :]
+        )
         for i, _ in enumerate(cities)
     ]
 
@@ -732,3 +732,83 @@ def construct_total_loss(
         return _loss_fn_theta
     else:
         return _loss_fn
+
+
+def compute_alleged_squared_pearson_residuals(
+    observed: list[Float[Array, "timepoints variants"]],
+    predicted: list[Float[Array, "timepoints variants"]],
+    sample_sizes: _OverDispersionType = 1.0,
+) -> list[Float[Array, "timepoints variants"]]:
+    n_cities = len(observed)
+    if len(predicted) != n_cities:
+        raise ValueError("Wrong number of cities")
+    lengths = []
+    for obs, pre in zip(observed, predicted):
+        if len(obs) != len(pre):
+            raise ValueError(f"Length mismatch {len(obs)} != {len(pre)}.")
+        lengths.append(len(obs))
+
+    ns_array = create_padded_array(
+        values=sample_sizes,
+        lengths=lengths,
+        padding_length=max(lengths),
+        padding_value=-1.0,
+    )
+    sample_sizes = [array[:length] for array, length in zip(ns_array, lengths)]
+    # Now sample_sizes has the same number of timepoints as predicted and observed
+
+    return [
+        ns[:, None] * jnp.square(obs - pre) / (pre * (1 - pre))
+        for obs, pre, ns in zip(observed, predicted, sample_sizes)
+    ]
+
+
+class OverDispersion(NamedTuple):
+    overall: Float[Array, " "]
+    cities: Float[Array, " cities"]
+
+
+def compute_overdispersion(
+    observed: list[Float[Array, "timepoints variants"]],
+    predicted: list[Float[Array, "timepoints variants"]],
+    sample_sizes: _OverDispersionType = 1.0,
+) -> OverDispersion:
+    """
+    Compute overdispersion from a quasimultinomial model.
+
+    Args:
+        ys_lst: A list of observed variant proportions for each city,
+                each with shape (timepoints, variants).
+        y_fit_lst: A list of fitted variant proportions for each city,
+                   each with shape (timepoints, variants).
+
+    Returns:
+        A single value of fixed overdispersion across all cities.
+        An array of overdispersion values for each city.
+    """
+    squared_pearson_statistics = compute_alleged_squared_pearson_residuals(
+        observed=observed,
+        predicted=predicted,
+        sample_sizes=sample_sizes,
+    )
+    n_cities = len(observed)
+    n_variants = observed[0].shape[1]
+
+    # Calculate it for each city
+    per_city = []
+    for values in squared_pearson_statistics:
+        n_timepoints = values.shape[0]
+        val = jnp.sum(values) / (n_timepoints * (n_variants - 1) - 2 * (n_variants - 1))
+        per_city.append(val)
+
+    total_pearson_statistics = sum(
+        [jnp.sum(values) for values in squared_pearson_statistics]
+    )
+    all_timepoints = sum([values.shape[0] for values in squared_pearson_statistics])
+    ddof = n_cities * (n_variants - 1) + (n_variants - 1)
+    psi = total_pearson_statistics / (all_timepoints * (n_variants - 1) - ddof)
+
+    return OverDispersion(
+        cities=jnp.array(per_city, dtype=float),
+        overall=psi,
+    )

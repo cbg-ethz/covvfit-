@@ -1,26 +1,10 @@
-import warnings
-
-try:
-    import covvfit._frequentist as freq
-
-    warnings.warn("The `freq` submodule is deprecated.")
-except Exception as e:
-    warnings.warn(
-        f"It is not possible to use `freq` subpackage due to missing dependencies. Exception raised: {e}"
-    )
-    freq = None
-
-try:
-    import covvfit._quasimultinomial as quasimultinomial
-except Exception as e:
-    warnings.warn(
-        f"It is not possible to use `quasimultinomial` subpackage due to missing dependencies. Exception raised: {e}"
-    )
-    freq_jax = None
+import covvfit._quasimultinomial as quasimultinomial
 
 try:
     import covvfit.simulation as simulation
 except Exception as e:
+    import warnings
+
     warnings.warn(
         f"It is not possible to use `simulation` subpackage due to missing dependencies. Exception raised: {e}"
     )
@@ -39,7 +23,6 @@ __all__ = [
     "preprocess_df",
     "load_data",
     "VERSION",
-    "freq",
     "quasimultinomial",
     "plot",
     "simulation",
