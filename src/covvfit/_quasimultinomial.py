@@ -634,16 +634,18 @@ def construct_model(
     """Builds a NumPyro model suitable for sampling from the quasiposterior.
 
     Args:
-        ys: list of variant proportions for each city.
+        ys: list of variant proportions array for each city.
             The ith entry should be an array
             of shape (n_timepoints[i], n_variants)
-        ts: list of timepoints. The ith entry should be an array
+        ts: list of timepoint arrays. The ith entry should be an array
             of shape (n_timepoints[i],)
             Note: `ts` should be appropriately normalized
-        ns: controls the overdispersion of each city by means of
-            quasimultinomial sample size
+        ns: controls the quasimultinomial sample size of each city. It can be:
+              - a single float (sample size is constant across all cities and timepoints)
+              - a sequence of floats, describing one sample size for each city
+              - a list of arrays, with the `i`th entry having length `n_timepoints[i]`
         overdispersion: controls the overdispersion factor as in the
-            quasilikelihood approach
+            quasilikelihood approach. The shape restrictions are the same as in `ns`.
         sigma_growth: controls the standard deviation of the prior
             on the relative growths
         sigma_offset: controls the standard deviation of the prior
@@ -707,10 +709,12 @@ def construct_total_loss(
         ts: list of timepoints. The ith entry should be an array
             of shape (n_timepoints[i],)
             Note: `ts` should be appropriately normalized
-        ns: controls the overdispersion of each city by means of
-            quasimultinomial sample size
+        ns: controls the quasimultinomial sample size of each city. It can be:
+              - a single float (sample size is constant across all cities and timepoints)
+              - a sequence of floats, describing one sample size for each city
+              - a list of arrays, with the `i`th entry having length `n_timepoints[i]`
         overdispersion: controls the overdispersion factor as in the
-            quasilikelihood approach
+            quasilikelihood approach. The shape restrictions are the same as in `ns`.
         accept_theta: whether the returned loss function should accept the
             `theta` vector (suitable for optimization)
             or should be parameterized by the relative growths
