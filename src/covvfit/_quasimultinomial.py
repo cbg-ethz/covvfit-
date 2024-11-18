@@ -109,7 +109,7 @@ class StandardErrorsMultipliers(NamedTuple):
         Example:
             StandardErrorsMultipliers.convert(0.95)  # 1.9599
         """
-        return float(jax.scipy.stats.norm.ppf((1 + confidence) / 2))
+        return float(jax.scipy.stats.norm.ppf((1 + confidence) / 2.0))
 
 
 def get_covariance(
@@ -185,7 +185,7 @@ def get_confidence_intervals(
         Assumes a normal distribution for the estimates.
     """
     # Calculate the multiplier based on the confidence level
-    z_score = jax.scipy.stats.norm.ppf((1 + confidence_level) / 2)
+    z_score = StandardErrorsMultipliers.convert(confidence_level)
 
     # Compute the lower and upper bounds of the confidence intervals
     lower_bound = estimates - z_score * standard_errors
@@ -269,6 +269,7 @@ def get_confidence_bands_logit(
         A list of dictionaries for each city, each with "lower" and "upper" bounds
         for the confidence intervals on the linear scale.
     """
+    # TODO(Pawel): Potentially fix the signature of this function.
 
     y_fit_lst_logit = [
         get_logit_predictions(solution_x, variants_count, i, ts).T[1:, :]
@@ -322,6 +323,8 @@ def get_relative_advantages(theta, n_variants: int):
 def get_softmax_predictions(
     theta: _ThetaType, n_variants: int, city_index: int, ts: Float[Array, " timepoints"]
 ) -> Float[Array, "timepoints variants"]:
+    # TODO(Pawel): Potentially fix the signature of this function.
+
     rel_growths = get_relative_growths(theta, n_variants=n_variants)
     growths = _add_first_variant(rel_growths)
 
