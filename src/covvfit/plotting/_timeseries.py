@@ -1,11 +1,17 @@
 """utilities to plot"""
+from typing import Literal
 
 import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from jaxtyping import Array, Float
 
-colors_covsp = {
+Variant = str
+Color = str
+
+COLORS_COVSPECTRUM: dict[Variant, Color] = {
     "B.1.1.7": "#D16666",
     "B.1.351": "#FF6666",
     "P.1": "#FFB3B3",
@@ -31,7 +37,7 @@ colors_covsp = {
 }
 
 
-def make_legend(colors, variants):
+def make_legend(colors: list[Color], variants: list[Variant]) -> list[mpatches.Patch]:
     """make a shared legend for the plot"""
     # Create a patch (i.e., a colored box) for each variant
     variant_patches = [
@@ -59,13 +65,23 @@ def make_legend(colors, variants):
     return handles
 
 
-def num_to_date(num, date_min, pos=None, fmt="%b. '%y"):
+def num_to_date(
+    num: pd.Series | Float[Array, " timepoints"], date_min: str, fmt="%b. '%y"
+) -> pd.Series:
     """convert days number into a date format"""
     date = pd.to_datetime(date_min) + pd.to_timedelta(num, "D")
     return date.strftime(fmt)
 
 
-def plot_fit(ax, ts, y_fit, variants, colors, linetype="-", **kwargs):
+def plot_fit(
+    ax: plt.Axes,
+    ts: Float[Array, " timepoints"],
+    y_fit: Float[Array, "timepoints variants"],
+    variants: list[Variant],
+    colors: list[Color],
+    linetype="-",
+    **kwargs,
+) -> None:
     """
     Function to plot fitted values with customizable line type.
 
@@ -81,7 +97,7 @@ def plot_fit(ax, ts, y_fit, variants, colors, linetype="-", **kwargs):
     for i, variant in enumerate(variants):
         ax.plot(
             ts[sorted_indices],
-            y_fit[i, :][sorted_indices],
+            y_fit[sorted_indices, i],
             color=colors[i],
             linestyle=linetype,
             label=f"fit {variant}",
@@ -89,48 +105,80 @@ def plot_fit(ax, ts, y_fit, variants, colors, linetype="-", **kwargs):
         )
 
 
-def plot_complement(ax, ts, y_fit, variants, color="grey", linetype="-"):
+def plot_complement(
+    ax: plt.Axes,
+    ts: Float[Array, " timepoints"],
+    y_fit: Float[Array, "timepoints variants"],
+    color: str = "grey",
+    linetype: str = "-",
+    **kwargs,
+) -> None:
     ## function to plot 1-sum(fitted_values) i.e., the other variant(s)
     sorted_indices = np.argsort(ts)
     ax.plot(
         ts[sorted_indices],
-        (1 - y_fit.sum(axis=0))[sorted_indices],
+        (1 - y_fit.sum(axis=-1))[sorted_indices],
         color=color,
         linestyle=linetype,
+        **kwargs,
     )
 
 
-def plot_data(ax, ts, ys, variants, colors):
+def plot_data(
+    ax: plt.Axes,
+    ts: Float[Array, " timepoints"],
+    ys: Float[Array, "timepoints variants"],
+    colors: list[Color],
+    size: float | int = 4,
+    alpha: float = 0.5,
+    **kwargs,
+) -> None:
     ## function to plot raw values
-    for i, variant in enumerate(variants):
-        ax.scatter(ts, ys[i, :], label="observed", alpha=0.5, color=colors[i], s=4)
+    for i in range(ys.shape[-1]):
+        ax.scatter(
+            ts,
+            ys[:, i],
+            label="observed",
+            alpha=alpha,
+            color=colors[i],
+            s=size,
+            **kwargs,
+        )
 
 
 def plot_confidence_bands(
-    ax, ts, conf_bands, variants, colors, label="Confidence band", alpha=0.2
-):
+    ax: plt.Axes,
+    ts: Float[Array, " timepoints"],
+    conf_bands: dict[Literal["lower", "upper"], Float[Array, "timepoints variants"]],
+    colors: list[Color],
+    label: str = "Confidence band",
+    alpha: float = 0.2,
+    **kwargs,
+) -> None:
     """
     Plot confidence intervals for fitted values on a given axis with customizable confidence level.
 
     Parameters:
-        ax (matplotlib.axes.Axes): The axis to plot on.
-        ts (array-like): Time series data.
-        y_fit_logit (array-like): Logit-transformed fitted values for each variant.
-        logit_se (array-like): Standard errors for the logit-transformed fitted values.
-        color (str): Color for the confidence interval.
-        confidence (float, optional): Confidence level (e.g., 0.95 for 95%). Default is 0.95.
-        label (str, optional): Label for the confidence band. Default is "Confidence band".
+        ax: The axis to plot on.
+        ts: Time series data.
+        color: Color for the confidence interval.
+        label: Label for the confidence band. Default is "Confidence band".
+        alpha: Alpha level controling the opacity.
+        **kwargs: Additional keyword arguments for `ax.fill_between`.
     """
     # Sort indices for time series
     sorted_indices = np.argsort(ts)
 
+    n_variants = conf_bands["lower"].shape[-1]
+
     # Plot the confidence interval
-    for i, variant in enumerate(variants):
+    for i in range(n_variants):
         ax.fill_between(
             ts[sorted_indices],
-            conf_bands["lower"][i][sorted_indices],
-            conf_bands["upper"][i][sorted_indices],
+            conf_bands["lower"][sorted_indices][i],
+            conf_bands["upper"][sorted_indices][i],
             color=colors[i],
             alpha=alpha,
             label=label,
+            **kwargs,
         )
