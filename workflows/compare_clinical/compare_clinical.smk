@@ -25,7 +25,7 @@ rule all:
 # Rule to fetch total counts
 rule fetch_total_counts:
     output:
-        "data/total_counts.csv"
+        "data/{run_name}/total_counts.csv"
     params:
         url=config["api_url"],
         params={"fields": "date,division", "country": config["country"]}
@@ -45,7 +45,7 @@ rule fetch_total_counts:
 
 rule fetch_variant_counts:
     output:
-        expand("data/{variant}_counts.csv", variant=config["variant_list"])
+        expand("data/{run_name}/{variant}_counts.csv", variant=config["variant_list"], run_name=run_name)
     params:
         url=config["api_url"],
         country=config["country"],
@@ -72,17 +72,17 @@ rule fetch_variant_counts:
                 df = pd.DataFrame()
 
             # Save the data
-            output_file = f"data/{variant}_counts.csv"
+            output_file = f"data/{run_name}/{variant}_counts.csv"
             df.to_csv(output_file, index=False)
 
 
 # Rule to merge data
 rule merge_data:
     input:
-        total="data/total_counts.csv",
-        variants=expand("data/{variant}_counts.csv", variant=config["variant_list"])
+        total="data/{run_name}/total_counts.csv",
+        variants=expand("data/{run_name}/{variant}_counts.csv", variant=config["variant_list"], run_name=run_name)
     output:
-        "data/merged_clinical_data.csv"
+        "data/{run_name}/merged_clinical_data.csv"
     run:
         import pandas as pd
 
@@ -104,7 +104,7 @@ rule merge_data:
 # Rule to filter and normalize data
 rule filter_and_normalize_data:
     input:
-        "data/merged_clinical_data.csv"
+        "data/{run_name}/merged_clinical_data.csv"
     output:
         "results/{run_name}/normalized_clinical_data.csv"
     params:
@@ -259,7 +259,7 @@ rule import_wastewater_data:
     input:
         config["wastewater_data_path"]
     output:
-        "data/wastewater_preprocessed.csv"
+        "data/{run_name}/wastewater_preprocessed.csv"
     params:
         start_date=config["filter"]["start_date"],
         end_date=config["filter"]["end_date"],
@@ -309,7 +309,7 @@ rule import_wastewater_data:
 
 rule fit_wastewater_data:
     input:
-        "data/wastewater_preprocessed.csv"
+        "data/{run_name}/wastewater_preprocessed.csv"
     output:
         "results/{run_name}/wastewater_models/wastewater_model_fitting_solution_{date}.json"
     params:
