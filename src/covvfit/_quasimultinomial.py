@@ -222,7 +222,7 @@ def fitted_values(
     return y_fit_lst
 
 
-def create_logit_predictions_fn(
+def _create_logit_predictions_fn(
     n_variants: int, city_index: int, ts: Float[Array, " timepoints"]
 ) -> Callable[
     [Float[Array, " (cities+1)*(variants-1)"]], Float[Array, "timepoints variants"]
@@ -250,8 +250,9 @@ def create_logit_predictions_fn(
 
 def get_confidence_bands_logit(
     theta: ModelParameters,
-    variants_count: int,
-    ts_lst_scaled: list[Float[Array, " timepoints"]],
+    *,
+    n_variants: int,
+    ts: list[Float[Array, " timepoints"]],
     covariance_scaled: Float[Array, "n_params n_params"],
     confidence_level: float = 0.95,
 ) -> list[tuple]:
@@ -259,10 +260,11 @@ def get_confidence_bands_logit(
     back-transforms them to the linear scale
 
     Args:
-        solution_x: Optimized parameters for the model.
+        theta: Parameters for the model.
         variants_count: Number of variants.
         ts_lst_scaled: List of timepoint arrays for each city.
-        covariance_scaled: Covariance matrix for the parameters.
+        covariance: Covariance matrix for the parameters. Note that it should
+            include any overdispersion factors.
         confidence_level: Desired confidence level for intervals (default is 0.95).
 
     Returns:
@@ -272,17 +274,15 @@ def get_confidence_bands_logit(
     # TODO(Pawel): Potentially fix the signature of this function.
     #   Issue 24
 
-    y_fit_lst_logit = [
-        get_logit_predictions(theta, variants_count, i, ts).T[1:, :]
-        for i, ts in enumerate(ts_lst_scaled)
+    logit_timeseries = [
+        get_logit_predictions(theta, n_variants, i, ts).T[1:, :]
+        for i, ts in enumerate(ts)
     ]
 
     y_fit_lst_logit_se = []
-    for i, ts in enumerate(ts_lst_scaled):
+    for i, ts in enumerate(ts):
         # Compute the Jacobian of the transformation and project standard errors
-        jacobian = jax.jacobian(create_logit_predictions_fn(variants_count, i, ts))(
-            theta
-        )
+        jacobian = jax.jacobian(_create_logit_predictions_fn(n_variants, i, ts))(theta)
         standard_errors = get_standard_errors(
             jacobian=jacobian, covariance=covariance_scaled
         ).T
@@ -291,7 +291,7 @@ def get_confidence_bands_logit(
     # Compute confidence intervals on the logit scale
     y_fit_lst_logit_confint = [
         get_confidence_intervals(fitted, se, confidence_level=confidence_level)
-        for fitted, se in zip(y_fit_lst_logit, y_fit_lst_logit_se)
+        for fitted, se in zip(logit_timeseries, y_fit_lst_logit_se)
     ]
 
     # Project confidence intervals to the linear scale

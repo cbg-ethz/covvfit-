@@ -36,7 +36,7 @@ plot_ts = plot.timeseries
 # We start by loading the data:
 
 # +
-_dir_switch = False  # Change this to 0 or 1, depending on the laptop you are on
+_dir_switch = False  # Change this to True or False, depending on the laptop you are on
 if _dir_switch:
     DATA_PATH = "../../LolliPop/lollipop_covvfit/deconvolved.csv"
     VAR_DATES_PATH = "../../LolliPop/lollipop_covvfit/var_dates.yaml"
@@ -48,7 +48,7 @@ else:
 data = pd.read_csv(DATA_PATH, sep="\t")
 data.head()
 
-
+# +
 # Load the YAML file
 with open(VAR_DATES_PATH, "r") as file:
     var_dates_data = yaml.safe_load(file)
@@ -113,9 +113,11 @@ data_full[variants_effective] = data_full[variants_effective].div(
 )
 
 # +
-_, ys_effective = preprocess.make_data_list(data_full, cities, variants_effective)
-ts_lst, ys_of_interest = preprocess.make_data_list(
-    data_full, cities, variants_of_interest
+ts_lst, ys_effective = preprocess.make_data_list(
+    data_full, cities=cities, variants=variants_effective
+)
+_, ys_of_interest = preprocess.make_data_list(
+    data_full, cities=cities, variants=variants_of_interest
 )
 
 # Scale the time for numerical stability
@@ -149,17 +151,54 @@ solution = qm.jax_multistart_minimize(loss, theta0, n_starts=10)
 theta_star = solution.x  # The maximum quasilikelihood estimate
 
 print(
-    f"Relative growth rates: \n",
+    f"Relative growth advantages: \n",
     qm.get_relative_growths(theta_star, n_variants=n_variants_effective),
 )
 # -
 
-# ## Make fitted values and confidence intervals
+# ## Confidence intervals of the growth advantages
+#
+# To obtain confidence intervals, we will take into account overdispersion. To do this, we need to compare the predictions with the observed values. Then, we can use overdispersion to attempt to correct the covariance matrix and obtain the confidence intervals.
 
+# +
 ## compute fitted values
 fitted_values = qm.fitted_values(
     ts_lst_scaled, theta=theta_star, cities=cities, n_variants=n_variants_effective
 )
+
+## compute covariance matrix
+covariance = qm.get_covariance(loss, theta_star)
+
+overdispersion_tuple = qm.compute_overdispersion(
+    observed=ys_effective,
+    predicted=fitted_values,
+)
+
+overdisp_fixed = overdispersion_tuple.overall
+
+print(
+    f"Overdispersion factor: {float(overdisp_fixed):.3f}.\nNote that values lower than 1 signify underdispersion."
+)
+
+
+## scale covariance by overdisp
+covariance_scaled = overdisp_fixed * covariance
+
+## compute standard errors and confidence intervals of the estimates
+standard_errors_estimates = qm.get_standard_errors(covariance_scaled)
+confints_estimates = qm.get_confidence_intervals(
+    theta_star, standard_errors_estimates, confidence_level=0.95
+)
+
+
+print("\n\nRelative growth advantages:")
+for variant, m, l, u in zip(
+    variants_effective[1:],
+    qm.get_relative_growths(theta_star, n_variants=n_variants_effective),
+    qm.get_relative_growths(confints_estimates[0], n_variants=n_variants_effective),
+    qm.get_relative_growths(confints_estimates[1], n_variants=n_variants_effective),
+):
+    print(f"  {variant}: {float(m):.2f} ({float(l):.2f} – {float(u):.2f})")
 
 
 # +
@@ -168,62 +207,46 @@ fitted_values = qm.fitted_values(
 # we need to transpose again
 y_fit_lst = [y.T[1:] for y in fitted_values]
 
-## compute covariance matrix
-covariance = qm.get_covariance(loss, theta_star)
-
-overdispersion_tuple = qm.compute_overdispersion(
-    observed=observed_data,
-    predicted=fitted_values,
-)
-
-overdisp_fixed = overdispersion_tuple.overall
-
-
-# +
-## scale covariance by overdisp
-covariance_scaled = overdisp_fixed * covariance
-
-## compute standard errors and confidence intervals of the estimates
-standard_errors_estimates = qm.get_standard_errors(covariance_scaled)
-confints_estimates = qm.get_confidence_intervals(theta_star, standard_errors_estimates)
-
 
 ## compute confidence intervals of the fitted values on the logit scale and back transform
 y_fit_lst_confint = qm.get_confidence_bands_logit(
-    solution.x, len(variants2), ts_lst_scaled, covariance_scaled
+    theta_star, len(variants_effective), ts_lst_scaled, covariance_scaled
 )
 
 ## compute predicted values and confidence bands
 horizon = 60
 ts_pred_lst = [jnp.arange(horizon + 1) + tt.max() for tt in ts_lst]
-ts_pred_lst_scaled = [(x - t_min) / (t_max - t_min) for x in ts_pred_lst]
+ts_pred_lst_scaled = t_scaler.transform(ts_pred_lst)
 
 y_pred_lst = qm.fitted_values(
-    ts_pred_lst_scaled, theta=solution.x, cities=cities, n_variants=len(variants2)
+    ts_pred_lst_scaled, theta=theta_star, cities=cities, n_variants=n_variants_effective
 )
 # ... and because of https://github.com/cbg-ethz/covvfit/issues/24
 # we need to transpose again
 y_pred_lst = [y.T[1:] for y in y_pred_lst]
 
 y_pred_lst_confint = qm.get_confidence_bands_logit(
-    solution.x, len(variants2), ts_pred_lst_scaled, covariance_scaled
+    solution.x, n_variants_effective, ts_pred_lst_scaled, covariance_scaled
 )
 
 
 # -
 
-# ## Plotting functions
+confints_estimates
+
+y_pred_lst[0].shape
+
+# ## Plot
+
+# +
+colors = [plot_ts.COLORS_COVSPECTRUM[var] for var in variants]
 
 plot_fit = plot_ts.plot_fit
 plot_complement = plot_ts.plot_complement
 plot_data = plot_ts.plot_data
 plot_confidence_bands = plot_ts.plot_confidence_bands
 
-# ## Plot
 
-# +
-colors_covsp = plot_ts.COLORS_COVSPECTRUM
-colors = [colors_covsp[var] for var in variants]
 fig, axes_tot = plt.subplots(4, 2, figsize=(15, 10))
 axes_flat = axes_tot.flatten()
 
