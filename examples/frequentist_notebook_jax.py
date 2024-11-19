@@ -121,8 +121,8 @@ _, ys_of_interest = preprocess.make_data_list(
 )
 
 # Scale the time for numerical stability
-t_scaler = preprocess.TimeScaler()
-ts_lst_scaled = t_scaler.fit_transform(ts_lst)
+time_scaler = preprocess.TimeScaler()
+ts_lst_scaled = time_scaler.fit_transform(ts_lst)
 # -
 
 
@@ -210,13 +210,17 @@ y_fit_lst = [y.T[1:] for y in fitted_values]
 
 ## compute confidence intervals of the fitted values on the logit scale and back transform
 y_fit_lst_confint = qm.get_confidence_bands_logit(
-    theta_star, len(variants_effective), ts_lst_scaled, covariance_scaled
+    theta_star,
+    n_variants=n_variants_effective,
+    ts=ts_lst_scaled,
+    covariance=covariance_scaled,
 )
+
 
 ## compute predicted values and confidence bands
 horizon = 60
 ts_pred_lst = [jnp.arange(horizon + 1) + tt.max() for tt in ts_lst]
-ts_pred_lst_scaled = t_scaler.transform(ts_pred_lst)
+ts_pred_lst_scaled = time_scaler.transform(ts_pred_lst)
 
 y_pred_lst = qm.fitted_values(
     ts_pred_lst_scaled, theta=theta_star, cities=cities, n_variants=n_variants_effective
@@ -226,13 +230,14 @@ y_pred_lst = qm.fitted_values(
 y_pred_lst = [y.T[1:] for y in y_pred_lst]
 
 y_pred_lst_confint = qm.get_confidence_bands_logit(
-    solution.x, n_variants_effective, ts_pred_lst_scaled, covariance_scaled
+    theta_star,
+    n_variants=n_variants_effective,
+    ts=ts_pred_lst_scaled,
+    covariance=covariance_scaled,
 )
 
 
 # -
-
-confints_estimates
 
 y_pred_lst[0].shape
 

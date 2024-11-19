@@ -253,7 +253,7 @@ def get_confidence_bands_logit(
     *,
     n_variants: int,
     ts: list[Float[Array, " timepoints"]],
-    covariance_scaled: Float[Array, "n_params n_params"],
+    covariance: Float[Array, "n_params n_params"],
     confidence_level: float = 0.95,
 ) -> list[tuple]:
     """Computes confidence intervals for logit predictions using the Delta method,
@@ -284,7 +284,7 @@ def get_confidence_bands_logit(
         # Compute the Jacobian of the transformation and project standard errors
         jacobian = jax.jacobian(_create_logit_predictions_fn(n_variants, i, ts))(theta)
         standard_errors = get_standard_errors(
-            jacobian=jacobian, covariance=covariance_scaled
+            jacobian=jacobian, covariance=covariance
         ).T
         y_fit_lst_logit_se.append(standard_errors)
 
