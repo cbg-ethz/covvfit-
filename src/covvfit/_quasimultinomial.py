@@ -243,9 +243,14 @@ def _create_logit_predictions_fn(
     ):
         return get_logit_predictions(
             theta=theta, n_variants=n_variants, city_index=city_index, ts=ts
-        )[:, 1:]
+        )
 
     return logit_predictions_with_fixed_args
+
+
+class ConfidenceBand(NamedTuple):
+    lower: Float[Array, "timepoints variants"]
+    upper: Float[Array, "timepoints variants"]
 
 
 def get_confidence_bands_logit(
@@ -255,7 +260,7 @@ def get_confidence_bands_logit(
     ts: list[Float[Array, " timepoints"]],
     covariance: Float[Array, "n_params n_params"],
     confidence_level: float = 0.95,
-) -> list[tuple]:
+) -> list[ConfidenceBand]:
     """Computes confidence intervals for logit predictions using the Delta method,
     back-transforms them to the linear scale
 
@@ -271,33 +276,32 @@ def get_confidence_bands_logit(
         A list of dictionaries for each city, each with "lower" and "upper" bounds
         for the confidence intervals on the linear scale.
     """
-    # TODO(Pawel): Potentially fix the signature of this function.
-    #   Issue 24
-
     logit_timeseries = [
-        get_logit_predictions(theta, n_variants, i, ts).T[1:, :]
-        for i, ts in enumerate(ts)
+        get_logit_predictions(theta, n_variants, i, ts) for i, ts in enumerate(ts)
     ]
 
-    y_fit_lst_logit_se = []
+    logit_se = []
     for i, ts in enumerate(ts):
         # Compute the Jacobian of the transformation and project standard errors
         jacobian = jax.jacobian(_create_logit_predictions_fn(n_variants, i, ts))(theta)
         standard_errors = get_standard_errors(
             jacobian=jacobian, covariance=covariance
-        ).T
-        y_fit_lst_logit_se.append(standard_errors)
+        )  #  TODO(Pawel): Issue 24, take a look at it.
+        logit_se.append(standard_errors)
 
     # Compute confidence intervals on the logit scale
-    y_fit_lst_logit_confint = [
+    logit_confint = [
         get_confidence_intervals(fitted, se, confidence_level=confidence_level)
-        for fitted, se in zip(logit_timeseries, y_fit_lst_logit_se)
+        for fitted, se in zip(logit_timeseries, logit_se)
     ]
 
     # Project confidence intervals to the linear scale
     y_fit_lst_logit_confint_expit = [
-        (jax.scipy.special.expit(confint[0]), jax.scipy.special.expit(confint[1]))
-        for confint in y_fit_lst_logit_confint
+        ConfidenceBand(
+            lower=jax.scipy.special.expit(confint[0]),
+            upper=jax.scipy.special.expit(confint[1]),
+        )
+        for confint in logit_confint
     ]
 
     return y_fit_lst_logit_confint_expit

@@ -1,5 +1,4 @@
 """utilities to plot"""
-from typing import Literal
 
 import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
@@ -77,9 +76,10 @@ def plot_fit(
     ax: plt.Axes,
     ts: Float[Array, " timepoints"],
     y_fit: Float[Array, "timepoints variants"],
-    variants: list[Variant],
+    *,
     colors: list[Color],
-    linetype="-",
+    variants: list[Variant] | None = None,
+    linestyle="-",
     **kwargs,
 ) -> None:
     """
@@ -91,16 +91,20 @@ def plot_fit(
         y_fit (array-like): Fitted values for each variant.
         variants (list): List of variant names.
         colors (list): List of colors for each variant.
-        linetype (str): Line style for plotting (e.g., '-', '--', '-.', ':').
+        linestyle (str): Line style for plotting (e.g., '-', '--', '-.', ':').
     """
     sorted_indices = np.argsort(ts)
+    n_variants = y_fit.shape[-1]
+    if variants is None:
+        variants = [""] * n_variants
+
     for i, variant in enumerate(variants):
         ax.plot(
             ts[sorted_indices],
             y_fit[sorted_indices, i],
             color=colors[i],
-            linestyle=linetype,
-            label=f"fit {variant}",
+            linestyle=linestyle,
+            label=variant,
             **kwargs,
         )
 
@@ -110,7 +114,7 @@ def plot_complement(
     ts: Float[Array, " timepoints"],
     y_fit: Float[Array, "timepoints variants"],
     color: str = "grey",
-    linetype: str = "-",
+    linestyle: str = "-",
     **kwargs,
 ) -> None:
     ## function to plot 1-sum(fitted_values) i.e., the other variant(s)
@@ -119,7 +123,7 @@ def plot_complement(
         ts[sorted_indices],
         (1 - y_fit.sum(axis=-1))[sorted_indices],
         color=color,
-        linestyle=linetype,
+        linestyle=linestyle,
         **kwargs,
     )
 
@@ -129,7 +133,7 @@ def plot_data(
     ts: Float[Array, " timepoints"],
     ys: Float[Array, "timepoints variants"],
     colors: list[Color],
-    size: float | int = 4,
+    size: float = 4.0,
     alpha: float = 0.5,
     **kwargs,
 ) -> None:
@@ -138,7 +142,6 @@ def plot_data(
         ax.scatter(
             ts,
             ys[:, i],
-            label="observed",
             alpha=alpha,
             color=colors[i],
             s=size,
@@ -149,7 +152,8 @@ def plot_data(
 def plot_confidence_bands(
     ax: plt.Axes,
     ts: Float[Array, " timepoints"],
-    conf_bands: dict[Literal["lower", "upper"], Float[Array, "timepoints variants"]],
+    conf_bands,
+    *,
     colors: list[Color],
     label: str = "Confidence band",
     alpha: float = 0.2,
@@ -161,6 +165,12 @@ def plot_confidence_bands(
     Parameters:
         ax: The axis to plot on.
         ts: Time series data.
+        conf_bands: confidence bands object. It can be:
+            1. A class with attributes `lower` and `upper`, each of which is
+               an array of shape `(n_timepoints, n_variants)` and represents
+               the lower and upper confidence bands, respectively.
+            2. A tuple of two arrays of the specified shape.
+            3. A dictionary with keys "lower" and "upper"
         color: Color for the confidence interval.
         label: Label for the confidence band. Default is "Confidence band".
         alpha: Alpha level controling the opacity.
@@ -169,14 +179,34 @@ def plot_confidence_bands(
     # Sort indices for time series
     sorted_indices = np.argsort(ts)
 
-    n_variants = conf_bands["lower"].shape[-1]
+    lower, upper = None, None
+    if hasattr(conf_bands, "lower") and hasattr(conf_bands, "upper"):
+        lower = conf_bands.lower
+        upper = conf_bands.upper
+    elif isinstance(conf_bands, dict):
+        lower = conf_bands["lower"]
+        upper = conf_bands["upper"]
+    else:
+        lower = conf_bands[0]
+        upper = conf_bands[1]
+
+    if lower is None or upper is None:
+        raise ValueError("Confidence bands are not in a recognized format.")
+
+    lower = np.asarray(lower)
+    upper = np.asarray(upper)
+
+    if lower.ndim != 2 or lower.shape != upper.shape:
+        raise ValueError("The shape is wrong.")
+
+    n_variants = lower.shape[-1]
 
     # Plot the confidence interval
     for i in range(n_variants):
         ax.fill_between(
             ts[sorted_indices],
-            conf_bands["lower"][sorted_indices][i],
-            conf_bands["upper"][sorted_indices][i],
+            lower[sorted_indices, i],
+            upper[sorted_indices, i],
             color=colors[i],
             alpha=alpha,
             label=label,

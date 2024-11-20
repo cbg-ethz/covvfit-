@@ -146,3 +146,7 @@ class TimeScaler:
         """
         self.fit(ts)
         return self.transform(ts)
+
+    @property
+    def time_unit(self) -> float:
+        return self.t_max - self.t_min
