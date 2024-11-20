@@ -284,9 +284,7 @@ def get_confidence_bands_logit(
     for i, ts in enumerate(ts):
         # Compute the Jacobian of the transformation and project standard errors
         jacobian = jax.jacobian(_create_logit_predictions_fn(n_variants, i, ts))(theta)
-        standard_errors = get_standard_errors(
-            jacobian=jacobian, covariance=covariance
-        )  #  TODO(Pawel): Issue 24, take a look at it.
+        standard_errors = get_standard_errors(jacobian=jacobian, covariance=covariance)
         logit_se.append(standard_errors)
 
     # Compute confidence intervals on the logit scale
