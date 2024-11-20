@@ -85,6 +85,7 @@ rule merge_data:
         "data/{run_name}/merged_clinical_data.csv"
     run:
         import pandas as pd
+        from pango_aliasor.aliasor import Aliasor
 
         df_total = pd.read_csv(input.total)
         merged_df = df_total.copy()
@@ -94,11 +95,54 @@ rule merge_data:
             df_variant = pd.read_csv(variant_file).rename(columns={"count": variant})
             merged_df = pd.merge(merged_df, df_variant, on=["date", "division"], how="left")
 
+
         # Clean data
         merged_df = merged_df.dropna(subset=["date"])
         merged_df["date"] = pd.to_datetime(merged_df["date"])
         merged_df = merged_df.fillna(0)
 
+        def is_parent_lineage(parent: str, child: str) -> bool:
+            """
+            Check if a lineage is a parent of another.
+
+            Parameters:
+            - parent (str): The potential parent lineage (e.g., "B.1.1.529").
+            - child (str): The potential child lineage (e.g., "BA.1").
+
+            Returns:
+            - bool: True if the parent is indeed a parent of the child, False otherwise.
+            """
+            # Initialize Aliasor
+            aliasor = Aliasor()
+            
+            # Convert both lineages to uncompressed forms
+            full_parent = aliasor.uncompress(parent)
+            full_child = aliasor.uncompress(child)
+            
+            # Check if the child starts with the parent
+            return full_child.startswith(full_parent + ".")
+
+
+        # Adjust for children using the is_parent_lineage function, handling nested hierarchies
+        def adjust_for_children(data, variants):
+            columns = variants
+            adjusted_data = data.copy()
+            aliasor = Aliasor()  # Initialize Aliasor
+
+            # Sort columns by lineage hierarchy to handle deeper levels first
+            sorted_columns = sorted(columns, key=lambda x: aliasor.uncompress(x).count("."), reverse=True)
+
+            # Process columns from deepest to shallowest
+            for parent in sorted_columns:
+                # Check for children of the parent lineage
+                children = [child for child in columns if is_parent_lineage(parent, child)]
+                if children:
+                    # Subtract the sum of the children counts from the parent
+                    adjusted_data[parent] -= adjusted_data[children].sum(axis=1)
+            
+            return adjusted_data
+
+        merged_df = adjust_for_children(merged_df, input.variants)
         merged_df.to_csv(output[0], index=False)
 
 # Rule to filter and normalize data
@@ -106,7 +150,7 @@ rule filter_and_normalize_data:
     input:
         "data/{run_name}/merged_clinical_data.csv"
     output:
-        "results/{run_name}/normalized_clinical_data.csv"
+        "data/{run_name}/normalized_clinical_data.csv"
     params:
         start_date=config["filter"]["start_date"],
         end_date=config["filter"]["end_date"],
@@ -144,7 +188,7 @@ rule filter_and_normalize_data:
 # Rule to fit clinical data
 rule fit_clinical_data:
     input:
-        "results/{run_name}/normalized_clinical_data.csv"
+        "data/{run_name}/normalized_clinical_data.csv"
     output:
         "results/{run_name}/clinical_models/model_fitting_solution_{date}.json"
     params:
