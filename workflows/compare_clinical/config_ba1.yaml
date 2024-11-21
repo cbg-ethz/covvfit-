@@ -20,7 +20,7 @@ variants_full:
   - "B.1.617.2*"
   - "BA.1*"
 
-variants:
+variants_investigated:
   - "BA.1*"
 
 filter:

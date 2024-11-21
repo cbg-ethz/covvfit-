@@ -22,7 +22,7 @@ variants_full:
   - "BA.1*"
   - "BA.2*"
 
-variants:
+variants_investigated:
   - "BA.1*"
   - "BA.2*"
 

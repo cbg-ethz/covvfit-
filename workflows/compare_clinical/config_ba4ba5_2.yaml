@@ -24,7 +24,7 @@ variants_full:
   - "BA.4*"
   - "BA.5*"
 
-variants:
+variants_investigated:
   - "BA.4*"
   - "BA.5*"
 

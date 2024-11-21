@@ -224,7 +224,7 @@ rule fit_clinical_data:
 
         # Preprocess the data
         data_full = preprocess.preprocess_df(
-            filtered_df, cities, variants_full, zero_date=start_date
+            filtered_df, cities, variants_full, zero_date=params.start_date
         )
 
         data_full["other"] = data_full[variants_other].sum(axis=1)
@@ -245,6 +245,8 @@ rule fit_clinical_data:
         t_max = time_scaler.t_max
         t_min = time_scaler.t_min
 
+        # print(f"ts_lst = {ts_lst}")
+        # print(f"t_max = {t_max}")
 
         # Fit the model
         loss = qm.construct_total_loss(
@@ -393,7 +395,13 @@ rule fit_wastewater_data:
         variants_effective = ["other"] + variants_investigated
 
         # Preprocess the data
-        data_full = preprocess.preprocess_df(data_wide, cities, variants_full, zero_date=params.start_date)
+        data_full = preprocess.preprocess_df(
+            data_wide,
+            cities,
+            variants_full,
+            # date_min=start_date,
+            zero_date=params.start_date
+            )
         data_full["other"] = data_full[variants_other].sum(axis=1)
         data_full[variants_effective] = data_full[variants_effective].div(
             data_full[variants_effective].sum(axis=1), axis=0
