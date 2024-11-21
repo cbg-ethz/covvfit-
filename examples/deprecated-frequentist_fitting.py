@@ -13,6 +13,9 @@
 # ---
 
 # %%
+## This model depends on deprecated PyMC utilities. It will be ported to JAX and NumPyro.
+
+# %%
 import pandas as pd
 import pymc as pm
 
