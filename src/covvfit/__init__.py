@@ -10,8 +10,8 @@ except Exception as e:
     )
     simulation = None
 
+import covvfit._preprocess_abundances as preprocess
 import covvfit.plotting as plot
-from covvfit._preprocess_abundances import load_data, make_data_list, preprocess_df
 from covvfit._splines import create_spline_matrix
 
 VERSION = "0.1.0"
@@ -19,11 +19,10 @@ VERSION = "0.1.0"
 
 __all__ = [
     "create_spline_matrix",
-    "make_data_list",
-    "preprocess_df",
     "load_data",
     "VERSION",
     "quasimultinomial",
     "plot",
+    "preprocess",
     "simulation",
 ]

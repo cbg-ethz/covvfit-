@@ -67,7 +67,7 @@ def loss(
     return -jnp.sum(n * y * logp, axis=-1)
 
 
-_ThetaType = Float[Array, "(cities+1)*(variants-1)"]
+ModelParameters = Float[Array, "(cities+1)*(variants-1)"]
 
 
 def _add_first_variant(vec: Float[Array, " variants-1"]) -> Float[Array, " variants"]:
@@ -78,21 +78,21 @@ def _add_first_variant(vec: Float[Array, " variants-1"]) -> Float[Array, " varia
 def construct_theta(
     relative_growths: Float[Array, " variants-1"],
     relative_midpoints: Float[Array, "cities variants-1"],
-) -> _ThetaType:
+) -> ModelParameters:
     flattened_midpoints = relative_midpoints.flatten()
     theta = jnp.concatenate([relative_growths, flattened_midpoints])
     return theta
 
 
 def get_relative_growths(
-    theta: _ThetaType,
+    theta: ModelParameters,
     n_variants: int,
 ) -> Float[Array, " variants-1"]:
     return theta[: n_variants - 1]
 
 
 def get_relative_midpoints(
-    theta: _ThetaType,
+    theta: ModelParameters,
     n_variants: int,
 ) -> Float[Array, "cities variants-1"]:
     n_cities = theta.shape[0] // (n_variants - 1) - 1
@@ -109,12 +109,12 @@ class StandardErrorsMultipliers(NamedTuple):
         Example:
             StandardErrorsMultipliers.convert(0.95)  # 1.9599
         """
-        return float(jax.scipy.stats.norm.ppf((1 + confidence) / 2))
+        return float(jax.scipy.stats.norm.ppf((1 + confidence) / 2.0))
 
 
 def get_covariance(
-    loss_fn: Callable[[_ThetaType], _Float],
-    theta: _ThetaType,
+    loss_fn: Callable[[ModelParameters], _Float],
+    theta: ModelParameters,
 ) -> Float[Array, "n_params n_params"]:
     """Calculates the covariance matrix of the parameters.
 
@@ -185,7 +185,7 @@ def get_confidence_intervals(
         Assumes a normal distribution for the estimates.
     """
     # Calculate the multiplier based on the confidence level
-    z_score = jax.scipy.stats.norm.ppf((1 + confidence_level) / 2)
+    z_score = StandardErrorsMultipliers.convert(confidence_level)
 
     # Compute the lower and upper bounds of the confidence intervals
     lower_bound = estimates - z_score * standard_errors
@@ -196,7 +196,7 @@ def get_confidence_intervals(
 
 def fitted_values(
     times: list[Float[Array, " timepoints"]],
-    theta: _ThetaType,
+    theta: ModelParameters,
     cities: list,
     n_variants: int,
 ) -> list[Float[Array, "timepoints variants"]]:
@@ -222,7 +222,7 @@ def fitted_values(
     return y_fit_lst
 
 
-def create_logit_predictions_fn(
+def _create_logit_predictions_fn(
     n_variants: int, city_index: int, ts: Float[Array, " timepoints"]
 ) -> Callable[
     [Float[Array, " (cities+1)*(variants-1)"]], Float[Array, "timepoints variants"]
@@ -239,63 +239,67 @@ def create_logit_predictions_fn(
     """
 
     def logit_predictions_with_fixed_args(
-        theta: _ThetaType,
+        theta: ModelParameters,
     ):
         return get_logit_predictions(
             theta=theta, n_variants=n_variants, city_index=city_index, ts=ts
-        )[:, 1:]
+        )
 
     return logit_predictions_with_fixed_args
 
 
+class ConfidenceBand(NamedTuple):
+    lower: Float[Array, "timepoints variants"]
+    upper: Float[Array, "timepoints variants"]
+
+
 def get_confidence_bands_logit(
-    solution_x: Float[Array, " (cities+1)*(variants-1)"],
-    variants_count: int,
-    ts_lst_scaled: list[Float[Array, " timepoints"]],
-    covariance_scaled: Float[Array, "n_params n_params"],
+    theta: ModelParameters,
+    *,
+    n_variants: int,
+    ts: list[Float[Array, " timepoints"]],
+    covariance: Float[Array, "n_params n_params"],
     confidence_level: float = 0.95,
-) -> list[tuple]:
+) -> list[ConfidenceBand]:
     """Computes confidence intervals for logit predictions using the Delta method,
     back-transforms them to the linear scale
 
     Args:
-        solution_x: Optimized parameters for the model.
+        theta: Parameters for the model.
         variants_count: Number of variants.
         ts_lst_scaled: List of timepoint arrays for each city.
-        covariance_scaled: Covariance matrix for the parameters.
+        covariance: Covariance matrix for the parameters. Note that it should
+            include any overdispersion factors.
         confidence_level: Desired confidence level for intervals (default is 0.95).
 
     Returns:
         A list of dictionaries for each city, each with "lower" and "upper" bounds
         for the confidence intervals on the linear scale.
     """
-
-    y_fit_lst_logit = [
-        get_logit_predictions(solution_x, variants_count, i, ts).T[1:, :]
-        for i, ts in enumerate(ts_lst_scaled)
+    logit_timeseries = [
+        get_logit_predictions(theta, n_variants, i, ts) for i, ts in enumerate(ts)
     ]
 
-    y_fit_lst_logit_se = []
-    for i, ts in enumerate(ts_lst_scaled):
+    logit_se = []
+    for i, ts in enumerate(ts):
         # Compute the Jacobian of the transformation and project standard errors
-        jacobian = jax.jacobian(create_logit_predictions_fn(variants_count, i, ts))(
-            solution_x
-        )
-        standard_errors = get_standard_errors(
-            jacobian=jacobian, covariance=covariance_scaled
-        ).T
-        y_fit_lst_logit_se.append(standard_errors)
+        jacobian = jax.jacobian(_create_logit_predictions_fn(n_variants, i, ts))(theta)
+        standard_errors = get_standard_errors(jacobian=jacobian, covariance=covariance)
+        logit_se.append(standard_errors)
 
     # Compute confidence intervals on the logit scale
-    y_fit_lst_logit_confint = [
+    logit_confint = [
         get_confidence_intervals(fitted, se, confidence_level=confidence_level)
-        for fitted, se in zip(y_fit_lst_logit, y_fit_lst_logit_se)
+        for fitted, se in zip(logit_timeseries, logit_se)
     ]
 
     # Project confidence intervals to the linear scale
     y_fit_lst_logit_confint_expit = [
-        (jax.scipy.special.expit(confint[0]), jax.scipy.special.expit(confint[1]))
-        for confint in y_fit_lst_logit_confint
+        ConfidenceBand(
+            lower=jax.scipy.special.expit(confint[0]),
+            upper=jax.scipy.special.expit(confint[1]),
+        )
+        for confint in logit_confint
     ]
 
     return y_fit_lst_logit_confint_expit
@@ -309,7 +313,22 @@ def triangular_mask(n_variants, valid_value: float = 0, masked_value: float = jn
     return nan_mask
 
 
-def get_relative_advantages(theta, n_variants: int):
+def get_relative_advantages(
+    theta: ModelParameters, n_variants: int
+) -> Float[Array, "variants variants"]:
+    """Returns a matrix of relative advantages, comparing every two variants.
+
+    Returns:
+        matrix of shape (n_variants, n_variants) with `A[reference, variant]`
+        representing the relative advantage of `variant` over `reference`.
+
+    Note:
+        From the model assumptions it follows that
+            `A[v1, v2] + A[v2, v3] = A[v1, v3]`
+        for every three variants. (I.e., the relative advantage
+        of `v3` over `v1` is the sum of advantages of `v3` over `v2`
+        and `v2` over `v1`)
+    """
     # Shape (n_variants-1,) describing relative advantages
     # over the 0th variant
     rel_growths = get_relative_growths(theta, n_variants=n_variants)
@@ -320,7 +339,10 @@ def get_relative_advantages(theta, n_variants: int):
 
 
 def get_softmax_predictions(
-    theta: _ThetaType, n_variants: int, city_index: int, ts: Float[Array, " timepoints"]
+    theta: ModelParameters,
+    n_variants: int,
+    city_index: int,
+    ts: Float[Array, " timepoints"],
 ) -> Float[Array, "timepoints variants"]:
     rel_growths = get_relative_growths(theta, n_variants=n_variants)
     growths = _add_first_variant(rel_growths)
@@ -339,7 +361,7 @@ def get_softmax_predictions(
 
 
 def get_logit_predictions(
-    theta: _ThetaType,
+    theta: ModelParameters,
     n_variants: int,
     city_index: int,
     ts: Float[Array, " timepoints"],
@@ -365,7 +387,7 @@ class OptimizeMultiResult:
 def construct_theta0(
     n_cities: int,
     n_variants: int,
-) -> _ThetaType:
+) -> ModelParameters:
     return np.zeros((n_cities * (n_variants - 1) + n_variants - 1,), dtype=float)
 
 
@@ -665,7 +687,7 @@ def construct_total_loss(
     overdispersion: _OverDispersionType = 1.0,
     accept_theta: bool = True,
     average_loss: bool = False,
-) -> Callable[[_ThetaType], _Float] | _RelativeGrowthsAndOffsetsFunction:
+) -> Callable[[ModelParameters], _Float] | _RelativeGrowthsAndOffsetsFunction:
     """Constructs the loss function, suitable e.g., for optimization.
 
     Args:
