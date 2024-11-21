@@ -193,7 +193,7 @@ rule fit_clinical_data:
         "results/{run_name}/clinical_models/model_fitting_solution_{date}.json"
     params:
         variants_full=config["variants_full"],
-        variants=config["variants"],
+        variants_investigated=config["variants_investigated"],
         start_date=config["filter"]["start_date"],
         n_starts=10,
         end_date="{date}"
@@ -202,7 +202,7 @@ rule fit_clinical_data:
         import numpy as np
         import jax.numpy as jnp
         import json
-        from covvfit import _preprocess_abundances as prec
+        from covvfit import preprocess as preprocess
         from covvfit import quasimultinomial as qm
 
         # Load input data
@@ -218,41 +218,48 @@ rule fit_clinical_data:
         filtered_df["undetermined"] = 0.0
 
         variants_full = params.variants_full
-        variants = params.variants
-        variants_other = [i for i in variants_full if i not in variants]
-        variants2 = ["other"] + variants
+        variants_investigated = params.variants_investigated
+        variants_other = [i for i in variants_full if i not in variants_investigated]
+        variants_effective = ["other"] + variants_investigated
 
         # Preprocess the data
-        data2 = prec.preprocess_df(filtered_df, cities, variants_full, zero_date=params.start_date)
-        data2["other"] = data2[variants_other].sum(axis=1)
-        data2[variants2] = data2[variants2].div(data2[variants2].sum(axis=1), axis=0)
+        data_full = preprocess.preprocess_df(
+            filtered_df, cities, variants_full, zero_date=start_date
+        )
+
+        data_full["other"] = data_full[variants_other].sum(axis=1)
+        data_full[variants_effective] = data_full[variants_effective].div(
+            data_full[variants_effective].sum(axis=1), axis=0
+        )
 
         # Merge and clean data
-        data2["time"] = pd.to_datetime(data2["time"])
-        data2 = data2.merge(filtered_df[["time", "city", "count_sum"]], on=["time", "city"], how="left")
-        data2 = data2[~data2.isna().any(axis=1)]
+        data_full["time"] = pd.to_datetime(data_full["time"])
+        data_full = data_full.merge(filtered_df[["time", "city", "count_sum"]], on=["time", "city"], how="left")
+        data_full = data_full[~data_full.isna().any(axis=1)]
 
         # Prepare time series and observations
-        ts_lst, ys_lst, ns_lst = prec.make_data_list(data2, cities, variants2)
-        t_min = min([ts.min() for ts in ts_lst])
-        t_max = max([ts.max() for ts in ts_lst])
-        ts_lst_scaled = [(x - t_min) / (t_max - t_min) for x in ts_lst]
-        observed_data = [y.T for y in ys_lst]
+        ts_lst, ys_effective, ns_lst = preprocess.make_data_list(data_full, cities, variants_effective)
+        # Scale the time for numerical stability
+        time_scaler = preprocess.TimeScaler()
+        ts_lst_scaled = time_scaler.fit_transform(ts_lst)
+        t_max = time_scaler.t_max
+        t_min = time_scaler.t_min
+
 
         # Fit the model
         loss = qm.construct_total_loss(
-            ys=observed_data,
+            ys=ys_effective,
             ts=ts_lst_scaled,
             ns=ns_lst,
             average_loss=False
         )
-        theta0 = qm.construct_theta0(n_cities=len(cities), n_variants=len(variants2))
+        theta0 = qm.construct_theta0(n_cities=len(cities), n_variants=len(variants_effective))
         solution = qm.jax_multistart_minimize(loss, theta0, n_starts=params.n_starts)
 
         # Save the solution
         solution_data = {
             "solution": solution.x.tolist(),
-            "variants": variants,
+            "variants": variants_investigated,
             "t_min": float(t_min),
             "t_max": float(t_max),
             "end_date": params.end_date
@@ -309,10 +316,10 @@ rule import_wastewater_data:
         end_date=config["filter"]["end_date"],
         cities=config["wastewater_cities"],
         variants_full=config["variants_full"],
-        variants=config["variants"]
+        variants=config["variants_investigated"]
     run:
         import pandas as pd
-        from covvfit import _preprocess_abundances as prec
+        from covvfit import preprocess as preprocess
 
         # Load and pivot the data
         data = pd.read_csv(input[0], sep="\t")
@@ -334,16 +341,16 @@ rule import_wastewater_data:
 
         # Define "other" variants
         variants_other = [i for i in variants_full if i not in variants]
-        variants2 = ["other"] + variants
+        variants_effective = ["other"] + variants
 
         # Preprocess the data
-        data2 = prec.preprocess_df(
+        data2 = preprocess.preprocess_df(
             data_wide, cities, variants_full, date_min=start_date, zero_date=start_date
         )
 
         # Add "other" column and normalize
         data2["other"] = data2[variants_other].sum(axis=1)
-        data2[variants2] = data2[variants2].div(data2[variants2].sum(axis=1), axis=0)
+        data2[variants_effective] = data2[variants_effective].div(data2[variants_effective].sum(axis=1), axis=0)
 
         # Filter by date range
         data2 = data2[(data2["time"] >= start_date) & (data2["time"] <= end_date)]
@@ -358,7 +365,7 @@ rule fit_wastewater_data:
         "results/{run_name}/wastewater_models/wastewater_model_fitting_solution_{date}.json"
     params:
         variants_full=config["variants_full"],
-        variants=config["variants"],
+        variants_investigated=config["variants_investigated"],
         start_date=config["filter"]["start_date"],
         cities=config["wastewater_cities"],
         n_starts=10,
@@ -368,7 +375,7 @@ rule fit_wastewater_data:
         import numpy as np
         import jax.numpy as jnp
         import json
-        from covvfit import _preprocess_abundances as prec
+        from covvfit import preprocess as preprocess
         from covvfit import quasimultinomial as qm
 
         # Load input data
@@ -381,36 +388,39 @@ rule fit_wastewater_data:
 
         cities = params.cities  # Extract cities from config
         variants_full = [v.rstrip("*") for v in params.variants_full] + ["undetermined"]
-        variants = [v.rstrip("*") for v in params.variants]
-        variants_other = [i for i in variants_full if i not in variants]
-        variants2 = ["other"] + variants
+        variants_investigated = [v.rstrip("*") for v in params.variants_investigated]
+        variants_other = [i for i in variants_full if i not in variants_investigated]
+        variants_effective = ["other"] + variants_investigated
 
         # Preprocess the data
-        data2 = prec.preprocess_df(data_wide, cities, variants_full, zero_date=params.start_date)
-        data2["other"] = data2[variants_other].sum(axis=1)
-        data2[variants2] = data2[variants2].div(data2[variants2].sum(axis=1), axis=0)
-
+        data_full = preprocess.preprocess_df(data_wide, cities, variants_full, zero_date=params.start_date)
+        data_full["other"] = data_full[variants_other].sum(axis=1)
+        data_full[variants_effective] = data_full[variants_effective].div(
+            data_full[variants_effective].sum(axis=1), axis=0
+        )
         # Prepare time series and observations
-        ts_lst, ys_lst = prec.make_data_list(data2, cities, variants2)
-        ts_lst, ys_lst2 = prec.make_data_list(data2, cities, variants)
-        t_max = max([x.max() for x in ts_lst])
-        t_min = min([x.min() for x in ts_lst])
-        ts_lst_scaled = [(x - t_min) / (t_max - t_min) for x in ts_lst]
-        observed_data = [y.T for y in ys_lst]
+        ts_lst, ys_effective = preprocess.make_data_list(
+            data_full, cities=cities, variants=variants_effective
+        )
+        # Scale the time for numerical stability
+        time_scaler = preprocess.TimeScaler()
+        ts_lst_scaled = time_scaler.fit_transform(ts_lst)
+        t_max = time_scaler.t_max
+        t_min = time_scaler.t_min
 
         # Fit the model
         loss = qm.construct_total_loss(
-            ys=observed_data,
+            ys=ys_effective,
             ts=ts_lst_scaled,
             average_loss=False  # No averaging for covariance matrix shrinkage
         )
-        theta0 = qm.construct_theta0(n_cities=len(cities), n_variants=len(variants2))
+        theta0 = qm.construct_theta0(n_cities=len(cities), n_variants=len(variants_effective))
         solution = qm.jax_multistart_minimize(loss, theta0, n_starts=params.n_starts)
 
         # Save the solution
         solution_data = {
             "solution": solution.x.tolist(),
-            "variants": variants2,
+            "variants": variants_effective,
             "t_min": float(t_min),
             "t_max": float(t_max),
             "end_date": params.end_date
@@ -461,7 +471,7 @@ rule plot_comparative_estimates:
     output:
         "results/{run_name}/comparative_estimates_plot.png"
     params:
-        variants=config["variants"] 
+        variants=config["variants_investigated"] 
     run:
         import matplotlib
         matplotlib.use("Agg")  # Use a non-GUI backend for rendering plots
