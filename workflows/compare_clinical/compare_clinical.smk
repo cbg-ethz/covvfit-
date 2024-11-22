@@ -19,7 +19,8 @@ rule all:
     input:
         f"results/{run_name}/consolidated_clinical_results.csv",
         f"results/{run_name}/consolidated_wastewater_results.csv",
-        f"results/{run_name}/comparative_estimates_plot.png"
+        f"results/{run_name}/comparative_estimates_plot.png",
+        f"results/{run_name}/fitted_values.gif",
 
 
 # Rule to fetch total counts
@@ -533,3 +534,179 @@ rule plot_comparative_estimates:
         plt.savefig(output[0])
         plt.close()
 
+
+
+rule plot_fitted_values:
+    # TODO (David): 
+    #   – plotting capabilities for wastewater data, or generalize
+    #   – plotting capabilities for mixed ?
+    #   – confidence bands
+    input:
+        data="data/{run_name}/normalized_clinical_data.csv",
+        model="results/{run_name}/clinical_models/model_fitting_solution_{date}.json"
+    output:
+        "results/{run_name}/fitted_plots/fitted_values_plot_{date}.png"
+    params:
+        variants_investigated=config["variants_investigated"],
+        variants_full=config["variants_full"],
+        cities=config["filter"]["divisions"],
+        start_date=config["filter"]["start_date"],
+        end_date=config["filter"]["end_date"]
+    run:
+        import matplotlib
+        matplotlib.use("Agg")  # Use a non-GUI backend for rendering plots
+        import jax.numpy as jnp
+        import json
+        import matplotlib.pyplot as plt
+        from matplotlib import ticker
+        from covvfit import quasimultinomial as qm
+        from covvfit import preprocess, plot
+        plot_ts = plot.timeseries
+
+        # Load input data and model solution
+        with open(input.model, "r") as f:
+            model_data = json.load(f)
+
+        theta_star = jnp.array(model_data["solution"])
+        t_min = model_data["t_min"]
+        t_max = model_data["t_max"]
+        n_variants_effective = len(params.variants_investigated) + 1  # Add "other"
+        start_date = pd.Timestamp(params.start_date)
+        end_date = pd.Timestamp(params.end_date)
+        cities = params.cities
+
+        # Load normalized data
+        normalized_data = pd.read_csv(input.data)
+        def make_raw_data(
+                input_data=input.data,
+                end_date=end_date,
+                cities=cities,
+                variants_full=params.variants_full,
+                variants_investigated=params.variants_investigated,
+            ):
+            # Load input data
+            filtered_df = pd.read_csv(input_data)
+            filtered_df = filtered_df.rename(columns={"date": "time", "division": "city"})
+
+            # Filter data up to the given end date
+            filtered_df["time"] = pd.to_datetime(filtered_df["time"])
+            filtered_df = filtered_df[filtered_df["time"] <= end_date]
+            filtered_df = filtered_df[filtered_df["time"] >= start_date]
+            filtered_df["undetermined"] = 0.0
+            variants_other = [i for i in variants_full if i not in variants_investigated]
+            variants_effective = ["other"] + variants_investigated
+
+            # Preprocess the data
+            data_full = preprocess.preprocess_df(
+                filtered_df, cities, variants_full, zero_date=start_date
+            )
+            data_full["other"] = data_full[variants_other].sum(axis=1)
+            data_full[variants_effective] = data_full[variants_effective].div(
+                data_full[variants_effective].sum(axis=1), axis=0
+            )
+            # Merge and clean data
+            data_full["time"] = pd.to_datetime(data_full["time"])
+            data_full = data_full.merge(filtered_df[["time", "city", "count_sum"]], on=["time", "city"], how="left")
+            data_full = data_full[~data_full.isna().any(axis=1)]
+
+            # Prepare time series and observations
+            ts_lst, ys_effective, ns_lst = preprocess.make_data_list(data_full, cities, variants_effective)
+            return (ts_lst, ys_effective, ns_lst)
+        
+        ts_lst_raw, ys_effective, ns_lst = make_raw_data()
+        
+        # Make ts_lst and ts_lst_scaled
+        ts_lst = [np.arange(t_max) for i, city in enumerate(cities)]
+        time_scaler = preprocess.TimeScaler()
+        ts_lst_scaled = time_scaler.fit_transform(ts_lst)
+
+        # Compute fitted values, covariance, and confidence intervals
+        ys_fitted = qm.fitted_values(
+            ts_lst_scaled, theta=theta_star, cities=cities, n_variants=n_variants_effective
+        )
+
+        # covariance = qm.get_covariance(loss, theta_star)
+        # overdispersion_tuple = qm.compute_overdispersion(observed=ys_effective, predicted=ys_fitted)
+        # overdisp_fixed = overdispersion_tuple.overall
+        # covariance_scaled = overdisp_fixed * covariance
+        # ys_fitted_confint = qm.get_confidence_bands_logit(
+            # theta_star, n_variants=n_variants_effective, ts=ts_lst_scaled, covariance=covariance_scaled
+        # )
+
+        # Prepare predictions
+        horizon = 60
+        ts_pred_lst = [jnp.arange(horizon + 1) + tt.max() for tt in ts_lst]
+        ts_pred_lst_scaled = time_scaler.transform(ts_pred_lst)
+        ys_pred = qm.fitted_values(
+            ts_pred_lst_scaled, theta=theta_star, cities=cities, n_variants=n_variants_effective
+        )
+        # ys_pred_confint = qm.get_confidence_bands_logit(
+        #     theta_star, n_variants=n_variants_effective, ts=ts_pred_lst_scaled, covariance=covariance_scaled
+        # )
+
+        # Colors for variants
+        colors = [plot_ts.COLORS_COVSPECTRUM[var.rstrip("*")] for var in params.variants_investigated]
+
+        # Create plot grid
+        figure_spec = plot.arrange_into_grid(len(cities), axsize=(4, 1.5), dpi=350, wspace=1)
+
+        def plot_city(ax, i: int) -> None:
+            def remove_0th(arr):
+                return arr[:, 1:]
+
+            plot_ts.plot_fit(ax, ts_lst[i], remove_0th(ys_fitted[i]), colors=colors)
+            plot_ts.plot_fit(
+                ax, ts_pred_lst[i], remove_0th(ys_pred[i]), colors=colors, linestyle="--"
+            )
+            # plot_ts.plot_confidence_bands(
+            #     ax, ts_lst[i], jax.tree_map(remove_0th, ys_fitted_confint[i]), colors=colors
+            # )
+            # plot_ts.plot_confidence_bands(
+            #     ax, ts_pred_lst[i], jax.tree_map(remove_0th, ys_pred_confint[i]), colors=colors
+            # )
+            plot_ts.plot_data(ax, ts_lst_raw[i], remove_0th(ys_effective[i]), colors=colors)
+            # plot_ts.plot_complement(ax, ts_lst[i], remove_0th(ys_fitted[i]), alpha=0.3)
+            # plot_ts.plot_complement(ax, ts_pred_lst[i], remove_0th(ys_pred[i]), linestyle="--", alpha=0.3)
+
+            def format_date(x, pos):
+                return plot_ts.num_to_date(x, date_min=start_date)
+
+            date_formatter = ticker.FuncFormatter(format_date)
+            ax.xaxis.set_major_formatter(date_formatter)
+            ax.set_yticks([0, 0.5, 1])
+            time_scaler_data = preprocess.TimeScaler()
+            time_scaler_data.fit(ts_lst_raw)
+            ax.set_xlim((time_scaler_data.t_min, time_scaler_data.t_max))
+            ax.set_yticklabels(["0%", "50%", "100%"])
+            ax.set_ylabel("Relative abundances")
+            ax.set_title(cities[i])
+
+        figure_spec.map(plot_city, range(len(cities)))
+        plt.savefig(output[0])
+        plt.close()
+
+
+rule generate_gif:
+    input:
+        plots=expand("results/{run_name}/fitted_plots/fitted_values_plot_{date}.png", 
+        date=date_range, run_name=run_name)
+    output:
+        gif="results/{run_name}/fitted_values.gif"
+    params:
+        duration=200  # Duration of each frame in milliseconds
+    run:
+        from PIL import Image
+
+        # Sort input files to ensure chronological order
+        plot_files = sorted(input.plots)
+        images = [Image.open(file) for file in plot_files]
+
+        # Save as GIF
+        images[0].save(
+            output.gif,
+            save_all=True,
+            append_images=images[1:],
+            duration=params.duration,
+            loop=0  # Infinite loop
+        )
+        print(f"GIF saved as {output.gif}")
