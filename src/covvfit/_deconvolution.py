@@ -40,8 +40,10 @@ GrowthModel = Callable[
 
 
 def logistic_growth(
-    params: LogisticGrowthParams, ts: Float[Array, " timepoints"]
+    params: LogisticGrowthParams, ts: Float[Array, "cities timepoints"]
 ) -> Float[Array, "cities timepoints variants"]:
+    ts.shape[0]
+
     return qm.calculate_logps(
         ts=ts,
         midpoints=qm._add_first_variant(params.relative_offsets),
@@ -49,7 +51,7 @@ def logistic_growth(
     )
 
 
-def _log_abundance(
+def _log_matrix(
     a: Float[Array, " *shape"],
     threshold: float = 1e-7,
 ) -> Float[Array, " *shape"]:
