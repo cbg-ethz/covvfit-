@@ -7,7 +7,13 @@ T = TypeVar("T")
 
 
 def _is_scalar(value) -> bool:
-    return not hasattr(value, "__len__")
+    try:
+        length = len(value)
+        if length != 0:
+            return False
+        return True
+    except TypeError:
+        return True
 
 
 def create_padded_array(
