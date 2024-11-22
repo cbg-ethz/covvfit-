@@ -1,0 +1,43 @@
+api_url: "https://lapis.cov-spectrum.org/open/v2/sample/aggregated"
+country: "Switzerland"
+wastewater_data_path: "../../../LolliPop/lollipop_covvfit/deconvolved.csv"
+
+run_name: "config_ba4ba5_2"
+
+wastewater_cities:
+  - "Zürich (ZH)"
+  - "Altenrhein (SG)"
+  - "Laupen (BE)"
+  - "Lugano (TI)"
+  - "Chur (GR)"
+  - "Genève (GE)"
+
+variant_list:
+  - "BA.1*"
+  - "BA.2*"
+  - "BA.4*"
+  - "BA.5*"
+
+variants_full:
+  - "BA.1*"
+  - "BA.2*"
+  - "BA.4*"
+  - "BA.5*"
+
+variants_investigated:
+  - "BA.4*"
+  - "BA.5*"
+
+filter:
+  start_date: "2022-05-11"
+  end_date: "2022-07-31"
+  date_range:
+    start: "2022-05-20"
+    end: "2022-07-31"
+  divisions:
+    - "Zürich"
+    - "Geneva"
+    - "Ticino"
+    - "Graubünden"
+    - "Bern"
+    - "Sankt Gallen"
