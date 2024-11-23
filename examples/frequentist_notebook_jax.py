@@ -24,6 +24,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import pandas as pd
 import yaml
+from pathlib import Path
 
 from covvfit import plot, preprocess
 from covvfit import quasimultinomial as qm
@@ -37,13 +38,9 @@ plot_ts = plot.timeseries
 # We start by loading the data:
 
 # +
-_dir_switch = False  # Change this to True or False, depending on the laptop you are on
-if _dir_switch:
-    DATA_PATH = "../../LolliPop/lollipop_covvfit/deconvolved.csv"
-    VAR_DATES_PATH = "../../LolliPop/lollipop_covvfit/var_dates.yaml"
-else:
-    DATA_PATH = "../new_data/deconvolved.csv"
-    VAR_DATES_PATH = "../new_data/var_dates.yaml"
+DATA_DIR = Path("../data/main/")
+DATA_PATH = DATA_DIR / "deconvolved.csv"
+VAR_DATES_PATH = DATA_DIR / "var_dates.yaml"
 
 
 data = pd.read_csv(DATA_PATH, sep="\t")
@@ -550,4 +547,3 @@ for i, ax in enumerate(axs[:, 1]):
 # Plot individual overdispersions
 for i, ax in enumerate(axs[:, 2]):
     plot_predictions(ax, i, **obtain_predictions(mcmc_indivi))
-# -
