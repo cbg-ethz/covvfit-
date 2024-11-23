@@ -2,6 +2,7 @@
 private/
 # Snakemake-generated files
 generated/
+.snakemake/
 
 .DS_Store
 src/.DS_Store

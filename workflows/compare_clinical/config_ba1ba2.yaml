@@ -1,6 +1,6 @@
 api_url: "https://lapis.cov-spectrum.org/open/v2/sample/aggregated"
 country: "Switzerland"
-wastewater_data_path: "../../../LolliPop/lollipop_covvfit/deconvolved.csv"
+wastewater_data_path: "../../data/main/deconvolved.csv"
 
 run_name: "config_ba1ba2"
 
