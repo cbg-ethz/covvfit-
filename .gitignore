@@ -1,6 +1,5 @@
 # Private files
 private/
-data/
 # Snakemake-generated files
 generated/
 
