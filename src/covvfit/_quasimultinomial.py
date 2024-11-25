@@ -359,6 +359,31 @@ def get_softmax_predictions(
     y_softmax = jax.nn.softmax(y_linear, axis=-1)
     return y_softmax
 
+def _logsumexp_excluding_column(
+        y_linear: Float[Array, "timepoints variants"],
+) -> Float[Array, "timepoints variants"]:
+    """
+    Compute logsumexp across the "variants" dimension for each column,
+    excluding the current column.
+
+    Args:
+        y_linear: A timepoints x variants array.
+
+    Returns:
+        A timepoints x variants array where each column i contains logsumexp
+        of all other columns (variants) except column i.
+    """
+    # Numerical stability by shifting with max_val
+    max_val = jnp.max(y_linear, axis=1, keepdims=True)
+    shifted = y_linear - max_val
+    # Compute sum exp shifted, 
+    # Substract sum exp shifted for each column
+    # Take the log and add back the max_val
+    sum_exp_shifted = jnp.sum(jnp.exp(shifted), axis=1, keepdims=True)
+    logsumexp_excl = jnp.log(sum_exp_shifted - jnp.exp(shifted)) + max_val
+
+    return logsumexp_excl
+
 
 def get_logit_predictions(
     theta: ModelParameters,
@@ -366,14 +391,25 @@ def get_logit_predictions(
     city_index: int,
     ts: Float[Array, " timepoints"],
 ) -> Float[Array, "timepoints variants"]:
-    return jax.scipy.special.logit(
-        get_softmax_predictions(
-            theta=theta,
-            n_variants=n_variants,
-            city_index=city_index,
-            ts=ts,
-        )
+    """
+    Compute predictions on the logit scale. 
+    Compute logit(softmax()) in a numerically stable manner
+    """
+    
+    rel_growths = get_relative_growths(theta, n_variants=n_variants)
+    growths = _add_first_variant(rel_growths)
+
+    rel_midpoints = get_relative_midpoints(theta, n_variants=n_variants)
+    midpoints = _add_first_variant(rel_midpoints[city_index])
+
+    y_linear = calculate_linear(
+        ts=ts,
+        midpoints=midpoints,
+        growths=growths,
     )
+
+    return y_linear - _logsumexp_excluding_column(y_linear)
+
 
 
 @dataclasses.dataclass
