@@ -359,27 +359,32 @@ def get_softmax_predictions(
     y_softmax = jax.nn.softmax(y_linear, axis=-1)
     return y_softmax
 
+
 def _logsumexp_excluding_column(
-        y_linear: Float[Array, "timepoints variants"],
-) -> Float[Array, "timepoints variants"]:
+    y: Float[Array, "*batch variants"],
+    axis: int = -1,
+) -> Float[Array, "*batch variants"]:
     """
     Compute logsumexp across the "variants" dimension for each column,
     excluding the current column.
 
     Args:
-        y_linear: A timepoints x variants array.
+        y_linear: a NumPy array.
+        axis: the axis representing variants, over which excluded logsumexp
+            will be performed
 
     Returns:
-        A timepoints x variants array where each column i contains logsumexp
-        of all other columns (variants) except column i.
+        an array of the same shape, where the `i`th element of the axis
+        corresponds to the logsum exp over all the other entries except
+        this one
     """
     # Numerical stability by shifting with max_val
-    max_val = jnp.max(y_linear, axis=1, keepdims=True)
-    shifted = y_linear - max_val
-    # Compute sum exp shifted, 
+    max_val = jnp.max(y, axis=axis, keepdims=True)
+    shifted = y - max_val
+    # Compute sum exp shifted,
     # Substract sum exp shifted for each column
     # Take the log and add back the max_val
-    sum_exp_shifted = jnp.sum(jnp.exp(shifted), axis=1, keepdims=True)
+    sum_exp_shifted = jnp.sum(jnp.exp(shifted), axis=axis, keepdims=True)
     logsumexp_excl = jnp.log(sum_exp_shifted - jnp.exp(shifted)) + max_val
 
     return logsumexp_excl
@@ -392,10 +397,10 @@ def get_logit_predictions(
     ts: Float[Array, " timepoints"],
 ) -> Float[Array, "timepoints variants"]:
     """
-    Compute predictions on the logit scale. 
+    Compute predictions on the logit scale.
     Compute logit(softmax()) in a numerically stable manner
     """
-    
+
     rel_growths = get_relative_growths(theta, n_variants=n_variants)
     growths = _add_first_variant(rel_growths)
 
@@ -409,7 +414,6 @@ def get_logit_predictions(
     )
 
     return y_linear - _logsumexp_excluding_column(y_linear)
-
 
 
 @dataclasses.dataclass
