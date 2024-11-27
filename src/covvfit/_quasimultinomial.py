@@ -360,20 +360,60 @@ def get_softmax_predictions(
     return y_softmax
 
 
+def _logsumexp_excluding_column(
+    y: Float[Array, "*batch variants"],
+    axis: int = -1,
+) -> Float[Array, "*batch variants"]:
+    """
+    Compute logsumexp across the "variants" dimension for each column,
+    excluding the current column.
+
+    Args:
+        y_linear: a NumPy array.
+        axis: the axis representing variants, over which excluded logsumexp
+            will be performed
+
+    Returns:
+        an array of the same shape, where the `i`th element of the axis
+        corresponds to the logsum exp over all the other entries except
+        this one
+    """
+    # Numerical stability by shifting with max_val
+    max_val = jnp.max(y, axis=axis, keepdims=True)
+    shifted = y - max_val
+    # Compute sum exp shifted,
+    # Substract sum exp shifted for each column
+    # Take the log and add back the max_val
+    sum_exp_shifted = jnp.sum(jnp.exp(shifted), axis=axis, keepdims=True)
+    logsumexp_excl = jnp.log(sum_exp_shifted - jnp.exp(shifted)) + max_val
+
+    return logsumexp_excl
+
+
 def get_logit_predictions(
     theta: ModelParameters,
     n_variants: int,
     city_index: int,
     ts: Float[Array, " timepoints"],
 ) -> Float[Array, "timepoints variants"]:
-    return jax.scipy.special.logit(
-        get_softmax_predictions(
-            theta=theta,
-            n_variants=n_variants,
-            city_index=city_index,
-            ts=ts,
-        )
+    """
+    Compute predictions on the logit scale.
+    Compute logit(softmax()) in a numerically stable manner
+    """
+
+    rel_growths = get_relative_growths(theta, n_variants=n_variants)
+    growths = _add_first_variant(rel_growths)
+
+    rel_midpoints = get_relative_midpoints(theta, n_variants=n_variants)
+    midpoints = _add_first_variant(rel_midpoints[city_index])
+
+    y_linear = calculate_linear(
+        ts=ts,
+        midpoints=midpoints,
+        growths=growths,
     )
+
+    return y_linear - _logsumexp_excluding_column(y_linear)
 
 
 @dataclasses.dataclass
@@ -794,6 +834,7 @@ def compute_overdispersion(
     observed: list[Float[Array, "timepoints variants"]],
     predicted: list[Float[Array, "timepoints variants"]],
     sample_sizes: _OverDispersionType = 1.0,
+    epsilon: float = 0.001,
 ) -> OverDispersion:
     """
     Compute overdispersion from a quasimultinomial model.
@@ -803,6 +844,8 @@ def compute_overdispersion(
                 each with shape (timepoints, variants).
         y_fit_lst: A list of fitted variant proportions for each city,
                    each with shape (timepoints, variants).
+        epsilon: overdispersion is computed using residuals for predicted
+                    values larger than epsilon and smaller than 1-epsilon
 
     Returns:
         A single value of fixed overdispersion across all cities.
@@ -816,19 +859,30 @@ def compute_overdispersion(
     n_cities = len(observed)
     n_variants = observed[0].shape[1]
 
-    # Calculate it for each city
+    # Create a mask list and filter extreme predictions
+    masks = [(y > epsilon) & (y < 1 - epsilon) for y in predicted]
+    filtered_pearson = [
+        p[mask] for p, mask in zip(squared_pearson_statistics, masks)
+    ]  # this flattens the arrays
+
+    # Calculate overdispersion for each city
     per_city = []
-    for values in squared_pearson_statistics:
-        n_timepoints = values.shape[0]
-        val = jnp.sum(values) / (n_timepoints * (n_variants - 1) - 2 * (n_variants - 1))
+    for values, mask in zip(filtered_pearson, masks):
+        n_timepoints = mask.shape[0]
+        n_filtered = (~mask).sum()
+        val = jnp.sum(values) / (
+            n_timepoints * (n_variants - 1) - 2 * (n_variants - 1) - n_filtered
+        )
         per_city.append(val)
 
-    total_pearson_statistics = sum(
-        [jnp.sum(values) for values in squared_pearson_statistics]
-    )
+    # Calculate overdispersion overall
+    total_pearson_statistics = sum([jnp.sum(values) for values in filtered_pearson])
     all_timepoints = sum([values.shape[0] for values in squared_pearson_statistics])
+    n_filtered = sum([(~mask).sum() for mask in masks])
     ddof = n_cities * (n_variants - 1) + (n_variants - 1)
-    psi = total_pearson_statistics / (all_timepoints * (n_variants - 1) - ddof)
+    psi = total_pearson_statistics / (
+        all_timepoints * (n_variants - 1) - ddof - n_filtered
+    )
 
     return OverDispersion(
         cities=jnp.array(per_city, dtype=float),
