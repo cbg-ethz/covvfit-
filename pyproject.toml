@@ -21,7 +21,10 @@ seaborn = "^0.13.2"
 numpyro = "^0.14.0"
 subplots-from-axsize = "^0.1.9"
 pango-aliasor = "^0.3.0"
+typer = "^0.15.1"
 
+[tool.poetry.scripts]
+covvfit = "covvfit.cli:main"
 
 [tool.poetry.group.dev]
 optional = true
