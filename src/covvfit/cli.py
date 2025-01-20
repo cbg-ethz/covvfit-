@@ -1,16 +1,17 @@
+"""Main script to which subcommands from `covvfit._cli` can be added."""
 import typer
 
-import covvfit._cli.freyja as freyja
-import covvfit._cli.infer as infer
+from covvfit._cli.freyja import gather
+from covvfit._cli.infer import infer
+
+app = typer.Typer()
+
+# Add scripts here
+app.command()(gather)
+app.command()(infer)
 
 
 def main():
-    app = typer.Typer()
-
-    # Add scripts here
-    app.add_typer(freyja.app, name="gather_freyja")
-    app.add_typer(infer.app, name="infer")
-
     app()
 
 
