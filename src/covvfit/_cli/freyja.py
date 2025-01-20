@@ -11,5 +11,8 @@ def freyja_gather(
 ):
     """Gathers Freyja-demixed files from the given directory into the output CSV,
     adding the metadata."""
-    typer.echo(f"Processing data file: {directory}")
+    typer.echo(
+        "This function is not implemented yet. It will be added at a later time."
+    )
+    typer.Exit(code=1)
     # Add your processing logic here
