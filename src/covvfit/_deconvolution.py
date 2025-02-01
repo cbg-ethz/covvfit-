@@ -6,27 +6,9 @@ import jax.numpy as jnp
 from jax.scipy.special import logsumexp
 from jaxtyping import Array, Bool, Float
 
-import covvfit._quasimultinomial as qm
-from covvfit._quasimultinomial import create_padded_array
-
-# Numerically stable functions to work with logarithms
-
-_LOG_THRESHOLD = 1e-7
-
-
-def _log_matrix(
-    a: Float[Array, " *shape"],
-    threshold: float = _LOG_THRESHOLD,
-) -> Float[Array, " *shape"]:
-    log_a = jnp.log(a)
-    neg_inf = jnp.finfo(a.dtype).min
-    return jnp.where(a > threshold, log_a, neg_inf)
-
-
-def log1mexp(x):
-    """Compute log(1 - exp(x)) in a numerically stable way."""
-    x = jnp.minimum(x, -jnp.finfo(x.dtype).eps)
-    return jnp.where(x > -0.693, jnp.log(-jnp.expm1(x)), jnp.log1p(-jnp.exp(x)))
+from covvfit._dynamics import JointLogisticGrowthParams
+from covvfit._numeric import LOG_THRESHOLD, log1mexp, log_matrix
+from covvfit._padding import create_padded_array
 
 
 class _DeconvolutionProblemData(NamedTuple):
@@ -67,71 +49,6 @@ class _DeconvolutionProblemData(NamedTuple):
     overdispersion: Float[Array, "cities timepoints mutations"]
 
     log_variant_defs: Float[Array, "variants mutations"]
-
-
-class JointLogisticGrowthParams(NamedTuple):
-    """This is a model of logistic growth (selection dynamics)
-    in `K` cities for `V` competing variants.
-
-    We assume that the relative growth advantages
-    do not change between the cities, however
-    we allow different introduction times, resulting
-    in different offsets in the logistic growth model.
-
-    This model has `V-1` relative growth rate parameters
-    and `K*(V-1)` offsets.
-    """
-
-    relative_growths: Float[Array, " variants-1"]
-    relative_offsets: Float[Array, "cities variants-1"]
-
-    @property
-    def n_cities(self) -> int:
-        return self.relative_offsets.shape[0]
-
-    @property
-    def n_variants(self) -> int:
-        return 1 + self.relative_offsets.shape[1]
-
-    @property
-    def n_params(self) -> int:
-        return (self.n_variants - 1) * (self.n_cities + 1)
-
-    @staticmethod
-    def _predict_log_abundance_single(
-        relative_growths: Float[Array, " variants-1"],
-        relative_offsets: Float[Array, " variants-1"],
-        timepoints: Float[Array, " timepoints"],
-    ) -> Float[Array, "timepoints variants"]:
-        return qm.calculate_logps(
-            ts=timepoints,
-            midpoints=qm._add_first_variant(relative_offsets),
-            growths=qm._add_first_variant(relative_growths),
-        )
-
-    def predict_log_abundance(
-        self,
-        timepoints: Float[Array, "cities timepoints"],
-    ) -> Float[Array, "cities timepoints variants"]:
-        _new_shape = (self.n_cities, self.n_variants - 1)
-        tiled_growths = jnp.broadcast_to(self.relative_growths[None, :], _new_shape)
-
-        return jax.vmap(self._predict_log_abundance_single, in_axes=0)(
-            tiled_growths, self.relative_offsets, timepoints
-        )
-
-    @classmethod
-    def from_vector(cls, theta, n_variants: int) -> "JointLogisticGrowthParams":
-        return JointLogisticGrowthParams(
-            relative_growths=qm.get_relative_growths(theta, n_variants=n_variants),
-            relative_offsets=qm.get_relative_midpoints(theta, n_variants=n_variants),
-        )
-
-    def to_vector(self) -> Float[Array, " *batch"]:
-        return qm.construct_theta(
-            relative_growths=self.relative_growths,
-            relative_midpoints=self.relative_offsets,
-        )
 
 
 PyTree = TypeVar("PyTree")
@@ -216,7 +133,7 @@ def _validate_and_pad(
     mask: list[Bool[Array, "timepoints loci"]] | None = None,
     ns: float = 1.0,
     overdispersion: float = 1.0,
-    _threshold: float = _LOG_THRESHOLD,
+    _threshold: float = LOG_THRESHOLD,
 ) -> _DeconvolutionProblemData:
     """Validation function, parsing the input provided in
     the format convenient for the user to the internal
@@ -307,7 +224,7 @@ def _validate_and_pad(
         mask=out_mask,
         n_quasibin=out_n,
         overdispersion=out_overdispersion,
-        log_variant_defs=_log_matrix(
+        log_variant_defs=log_matrix(
             jnp.asarray(variant_def, dtype=float), threshold=_threshold
         ),
     )
@@ -318,8 +235,8 @@ def construct_total_loss(
     mutations: list[Float[Array, "timepoints loci"]],
     variant_def: Bool[Array, "variants loci"],
     mask: list[Bool[Array, "timepoints loci"]] | None = None,
-    ns: qm._OverDispersionType = 1.0,
-    overdispersion: qm._OverDispersionType = 1.0,
+    ns: float = 1.0,
+    overdispersion: float = 1.0,
     accept_vector: bool = True,
 ):
     """Constructs the loss function for deconvolution.
@@ -337,6 +254,8 @@ def construct_total_loss(
             the value and we prefer to treat it as missing data
         variant_def: variant definitions matrix, shape (n_variants, n_loci)
     """
+    # TODO(Pawel): Allow `ns` and `overdispersion` to be varying per city and locus,
+    #   rather, than fixing them to one constant
 
     # Take the logarithm of the variant definition matrix
     # in a numerically stable manner
@@ -346,6 +265,8 @@ def construct_total_loss(
         mutations=mutations,
         variant_def=variant_def,
         mask=mask,
+        ns=ns,
+        overdispersion=overdispersion,
     )
 
     quasiloglikelihood_fn = _generate_quasiloglikelihood_function(data)

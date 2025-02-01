@@ -51,7 +51,7 @@ relative_offsets = jnp.asarray(
 )
 relative_growth_rates = jnp.asarray([0.2, 1.0, 5.0])
 
-n_timepoints = 30
+n_timepoints = 40
 
 timepoints = jnp.asarray(
     [
@@ -92,7 +92,7 @@ ms_perfect = jnp.einsum("vm,ctv->ctm", A, ys)
 
 rng = np.random.default_rng(42)
 
-sample_size = 200
+sample_size = 20
 
 ms_sampled = rng.binomial(sample_size, jnp.clip(ms_perfect, 1e-5, 1 - 1e-5)) / float(
     sample_size
@@ -128,7 +128,7 @@ for city, ax in enumerate(axs.ravel()):
     ax.spines[["top", "right"]].set_visible(False)
 
 # %%
-log_A = dec._log_matrix(jnp.asarray(A, dtype=float))
+log_A = dec.log_matrix(jnp.asarray(A, dtype=float))
 
 
 problem_data = dec._DeconvolutionProblemData(
@@ -157,13 +157,48 @@ def loss_fn_vector(theta) -> float:
 
 
 # %%
-theta0 = 0 * model.to_vector()
+theta0 = 0.0 * model.to_vector()
 
-# %%
 theta_star = qm.jax_multistart_minimize(loss_fn_vector, theta0).x
-print(dec.JointLogisticGrowthParams.from_vector(theta_star, n_variants))
+model_star = dec.JointLogisticGrowthParams.from_vector(theta_star, n_variants)
 
 # %%
-print(model)
+fig, axs = subplots_from_axsize(
+    1, 2, axsize=(2, 1.5), sharex=False, sharey=False, dpi=180
+)
+for ax in axs:
+    ax.spines[["top", "right"]].set_visible(False)
+
+ax = axs[0]
+ax.scatter(
+    jnp.arange(n_variants - 1),
+    model.relative_growths,
+    marker=".",
+    label="Ground truth",
+    c="limegreen",
+)
+ax.scatter(
+    jnp.arange(n_variants - 1),
+    model_star.relative_growths,
+    marker="x",
+    label="Inferred",
+    c="darkblue",
+)
+ax.set_xlabel("Growth rates (relative to 0th variant)")
+
+ax = axs[1]
+x_ax = jnp.arange(len(model.relative_offsets.ravel()))
+ax.scatter(
+    x_ax, model.relative_offsets.ravel(), marker=".", label="Ground truth", c="black"
+)
+ax.scatter(
+    x_ax,
+    model_star.relative_offsets.ravel(),
+    marker="x",
+    label="Inferred",
+    c="darkblue",
+)
+
+ax.set_xlabel("Offsets (relative to 0th variant)")
 
 # %%
