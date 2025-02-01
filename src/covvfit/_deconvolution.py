@@ -121,10 +121,10 @@ class JointLogisticGrowthParams(NamedTuple):
         )
 
     @classmethod
-    def from_vector(cls, theta) -> "JointLogisticGrowthParams":
+    def from_vector(cls, theta, n_variants: int) -> "JointLogisticGrowthParams":
         return JointLogisticGrowthParams(
-            relative_growths=qm.get_relative_growths(theta),
-            relative_offsets=qm.get_relative_midpoints(theta),
+            relative_growths=qm.get_relative_growths(theta, n_variants=n_variants),
+            relative_offsets=qm.get_relative_midpoints(theta, n_variants=n_variants),
         )
 
     def to_vector(self) -> Float[Array, " *batch"]:
@@ -354,7 +354,9 @@ def construct_total_loss(
         return -quasiloglikelihood_fn(params)
 
     def loss_fn_vector(theta: jax.Array) -> float:
-        params = JointLogisticGrowthParams.from_vector(theta)
+        params = JointLogisticGrowthParams.from_vector(
+            theta, n_variants=data.n_variants
+        )
         return loss_fn(params)
 
     if accept_vector:

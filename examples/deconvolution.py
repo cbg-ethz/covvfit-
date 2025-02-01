@@ -144,23 +144,26 @@ problem_data = dec._DeconvolutionProblemData(
 )
 
 # %%
-dec._calculate_log_mutation_probabilities(log_A, log_ys[0, 0])
+quasiloglikelihood_fn = dec._generate_quasiloglikelihood_function(problem_data)
+
+
+def loss_fn(params) -> float:
+    return -quasiloglikelihood_fn(params)
+
+
+def loss_fn_vector(theta) -> float:
+    params = dec.JointLogisticGrowthParams.from_vector(theta, n_variants)
+    return loss_fn(params)
+
 
 # %%
-jnp.log(A.T @ ys[0, 0])
+theta0 = 0 * model.to_vector()
 
 # %%
-qll = dec._generate_quasiloglikelihood_function(problem_data)
+theta_star = qm.jax_multistart_minimize(loss_fn_vector, theta0).x
+print(dec.JointLogisticGrowthParams.from_vector(theta_star, n_variants))
 
 # %%
-qll(model)
-
-# %%
-model2 = dec.JointLogisticGrowthParams(
-    relative_growths=relative_growth_rates + 1.3,
-    relative_offsets=relative_offsets - 1.2,
-)
-
-qll(model2)
+print(model)
 
 # %%
