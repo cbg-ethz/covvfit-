@@ -206,7 +206,7 @@ def _validate_and_pad(
     out_mutations = jnp.full(
         shape=(n_cities, max_timepoints, n_loci), fill_value=0.0, dtype=float
     )
-    for city in enumerate(n_cities):
+    for city in range(n_cities):
         n_ts = _lengths[city]
         data = mutations[city]
         out_mutations = out_mutations.at[city, :n_ts, ...].set(data)
