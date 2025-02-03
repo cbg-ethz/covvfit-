@@ -1,3 +1,6 @@
+import covvfit._deconvolution as deconvolution
+import covvfit._dynamics as dynamics
+import covvfit._numeric as numeric
 import covvfit._quasimultinomial as quasimultinomial
 
 try:
@@ -19,8 +22,11 @@ VERSION = "0.1.0"
 
 __all__ = [
     "create_spline_matrix",
+    "dynamics",
+    "deconvolution",
     "load_data",
     "VERSION",
+    "numeric",
     "quasimultinomial",
     "plot",
     "preprocess",
