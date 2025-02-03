@@ -6,7 +6,7 @@ import jax.numpy as jnp
 T = TypeVar("T")
 
 
-def _is_scalar(value) -> bool:
+def is_scalar(value) -> bool:
     try:
         length = len(value)
         if length != 0:
@@ -55,7 +55,7 @@ def create_padded_array(
     )
 
     # First case: `values` argument is a single number (not an iterable)
-    if _is_scalar(values):
+    if is_scalar(values):
         for i, length in enumerate(lengths):
             out_array = out_array.at[i, :length].set(values)
         return out_array
@@ -67,7 +67,7 @@ def create_padded_array(
         )
 
     for i, (value, exp_len) in enumerate(zip(values, lengths)):
-        if _is_scalar(value):  # For this city we have constant value provided
+        if is_scalar(value):  # For this city we have constant value provided
             out_array = out_array.at[i, :exp_len].set(value)
         else:  # We have a vector of values provided
             if len(value) != exp_len:

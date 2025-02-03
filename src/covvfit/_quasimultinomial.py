@@ -1,6 +1,5 @@
 """Frequentist fitting functions powered by JAX."""
 
-import dataclasses
 from typing import Callable, NamedTuple
 
 import jax
@@ -9,9 +8,13 @@ import numpy as np
 import numpyro
 import numpyro.distributions as distrib
 from jaxtyping import Array, Bool, Float
-from scipy import optimize
 
+from covvfit._numeric import OptimizeMultiResult, jax_multistart_minimize
 from covvfit._padding import create_padded_array
+
+# TODO(Pawel): These utilities are made public here for the backward compatibility
+#   purposes. However, at some point we should refactor the code
+__all__ = ["OptimizeMultiResult", "jax_multistart_minimize"]
 
 
 def calculate_linear(
@@ -416,59 +419,11 @@ def get_logit_predictions(
     return y_linear - _logsumexp_excluding_column(y_linear)
 
 
-@dataclasses.dataclass
-class OptimizeMultiResult:
-    x: np.ndarray
-    fun: float
-    best: optimize.OptimizeResult
-    runs: list[optimize.OptimizeResult]
-
-
 def construct_theta0(
     n_cities: int,
     n_variants: int,
 ) -> ModelParameters:
     return np.zeros((n_cities * (n_variants - 1) + n_variants - 1,), dtype=float)
-
-
-def jax_multistart_minimize(
-    loss_fn,
-    theta0: np.ndarray,
-    n_starts: int = 10,
-    random_seed: int = 42,
-    maxiter: int = 10_000,
-) -> OptimizeMultiResult:
-    # Create loss function and its gradient
-    _loss_grad_fun = jax.jit(jax.value_and_grad(loss_fn))
-
-    def loss_grad_fun(theta):
-        loss, grad = _loss_grad_fun(theta)
-        return np.asarray(loss), np.asarray(grad)
-
-    solutions: list[optimize.OptimizeResult] = []
-    rng = np.random.default_rng(random_seed)
-
-    for i in range(1, n_starts + 1):
-        starting_point = theta0 + (i / n_starts) * rng.normal(size=theta0.shape)
-        sol = optimize.minimize(
-            loss_grad_fun, jac=True, x0=starting_point, options={"maxiter": maxiter}
-        )
-        solutions.append(sol)
-
-    # Find the optimal solution
-    optimal_index = None
-    optimal_value = np.inf
-    for i, sol in enumerate(solutions):
-        if sol.fun < optimal_value:
-            optimal_index = i
-            optimal_value = sol.fun
-
-    return OptimizeMultiResult(
-        best=solutions[optimal_index],
-        x=solutions[optimal_index].x,
-        fun=solutions[optimal_index].fun,
-        runs=solutions,
-    )
 
 
 class _ProblemData(NamedTuple):
