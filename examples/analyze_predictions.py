@@ -63,7 +63,6 @@ with open(VAR_DATES_PATH, "r") as file:
 # Access the var_dates data
 var_dates = var_dates_data["var_dates"]
 
-
 data_wide = data.pivot_table(
     index=["date", "location"], columns="variant", values="proportion", fill_value=0
 ).reset_index()
@@ -78,24 +77,6 @@ cities = [
     "Chur (GR)",
     "Genève (GE)",
 ]
-
-# -
-
-# Now we look at the variants in the data and define the variants of interest:
-
-# +
-# Convert the keys to datetime objects for comparison
-var_dates_parsed = {
-    pd.to_datetime(date): variants for date, variants in var_dates.items()
-}
-
-
-# Function to find the latest matching date in var_dates
-def match_date(start_date):
-    start_date = pd.to_datetime(start_date)
-    closest_date = max(date for date in var_dates_parsed if date <= start_date)
-    return closest_date, var_dates_parsed[closest_date]
-
 
 variants_full = [
     "BA.5",
@@ -125,6 +106,26 @@ variants_investigated = [
 variants_other = [
     i for i in variants_full if i not in variants_investigated
 ]  # Variants not of interest
+
+variants_evaluated = [
+    "EG.5",
+    "JN.1",
+    "BA.2.86",
+]  # variants for which we will evaluate predictions
+
+# date parameters for the range of the simulation
+
+max_date = pd.to_datetime("2024-01-01")
+start_date = pd.to_datetime("2022-10-21")
+max_dates = pd.date_range(start="2023-08-01", end="2024-01-01", freq="D")
+max_horizon = 45
+
+# smoothing parameters:
+sigma = 15
+smoothing_method = "median"
+max_smooth_date = max_date + pd.to_timedelta(3 * sigma + max_horizon, "D")
+
+
 # -
 
 # Apart from the variants of interest, we define the "other" variant, which artificially merges all the other variants into one. This allows us to model the data as a compositional time series, i.e., the sum of abundances of all "variants" is normalized to one.
@@ -134,8 +135,6 @@ variants_other = [
 # We will define some functions to be reran at each iteration of the experiment. They will prepare the data from a date to another and fit the model. Then we will output some predictions.
 
 # +
-max_date = pd.to_datetime("2024-01-01")
-start_date = pd.to_datetime("2022-10-21")
 
 
 def prepare_data(data_wide, start_date, max_date):
@@ -220,10 +219,8 @@ def inference(ys_effective, ts_lst_scaled, ts_lst, time_scaler, horizon=7):
 #
 # We will smooth wastewater deconvolved data to average out the sampling noise. This will give us a better baseline to compare our predictions to.
 
+
 # +
-import numpy as np
-
-
 def gaussian_kernel(t, ts, sigma):
     """Compute Gaussian weights for a given t"""
     return np.exp(-0.5 * ((ts - t) / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
@@ -260,9 +257,7 @@ def smooth_array(tt, ts, ys, sigma, method="mean"):
 # smooth the data. make sure to include data away from the time boundaries of the experiment to avoid common biases from kernel smoothing
 
 # +
-sigma = 15
-
-prep_dat_full = prepare_data(data_wide, start_date, pd.to_datetime("2024-04-01"))
+prep_dat_full = prepare_data(data_wide, start_date, max_smooth_date)
 
 ys_lst_full = prep_dat_full["ys_effective"]
 ts_lst_full = prep_dat_full["ts_lst"]
@@ -274,7 +269,7 @@ for i in range(len(ys_lst_full)):
     max_t = int(ts_lst_full[i].max())
     ts_tmp = np.linspace(min_t, max_t, max_t - min_t + 1)
     ys_smooth = smooth_array(
-        ts_tmp, ts_lst_full[i], ys_lst_full[i], sigma=sigma, method="median"
+        ts_tmp, ts_lst_full[i], ys_lst_full[i], sigma=sigma, method=smoothing_method
     )
 
     ts_lst_smooth.append(ts_tmp)
@@ -347,31 +342,33 @@ def compare_all(ts_lst_pred, ys_lst_pred, ts_lst_smooth, ys_lst_smooth):
 # define when are the dates we want to fit at and predict, run the experiment
 
 # +
-# Generate list of max_dates from 2023-08-01 to 2023-11-01
-max_dates = pd.date_range(start="2023-08-01", end="2024-01-01", freq="D")
+import tqdm
+import warnings
 
 # Initialize list to store results
 all_differences_results = []
 all_relative_differences_results = []
 
-# Loop through max_dates and perform comparisons
-for max_date in max_dates:
-    prep_dat = prepare_data(data_wide, start_date, max_date)
+# Loop through max_dates and perform
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    for max_date in tqdm.tqdm(max_dates, leave=False):
+        prep_dat = prepare_data(data_wide, start_date, max_date)
 
-    inf_dat = inference(
-        prep_dat["ys_effective"],
-        prep_dat["ts_lst_scaled"],
-        prep_dat["ts_lst"],
-        prep_dat["time_scaler"],
-        horizon=45,
-    )
+        inf_dat = inference(
+            prep_dat["ys_effective"],
+            prep_dat["ts_lst_scaled"],
+            prep_dat["ts_lst"],
+            prep_dat["time_scaler"],
+            horizon=max_horizon,
+        )
 
-    diff_res, rel_diff_res = compare_all(
-        inf_dat["ts_pred_lst"], inf_dat["ys_pred"], ts_lst_smooth, ys_lst_smooth
-    )
+        diff_res, rel_diff_res = compare_all(
+            inf_dat["ts_pred_lst"], inf_dat["ys_pred"], ts_lst_smooth, ys_lst_smooth
+        )
 
-    all_differences_results.append(diff_res)
-    all_relative_differences_results.append(rel_diff_res)
+        all_differences_results.append(diff_res)
+        all_relative_differences_results.append(rel_diff_res)
 # -
 
 
@@ -422,6 +419,61 @@ for i, variant in enumerate([9, 2, 8]):
     #     )
     #     ax.set_ylim((0,2))
     #     ax.set_ylabel("mean abs rel error")
+
+# Deduplicate legend entries
+handles, labels = axes[1, 0].get_legend_handles_labels()
+unique_labels = {}
+unique_handles = []
+for handle, label in zip(handles, labels):
+    if label not in unique_labels:
+        unique_labels[label] = handle
+        unique_handles.append((handle, label))
+
+# Add unique legend
+fig.legend(
+    [h for h, _ in unique_handles],
+    [l for _, l in unique_handles],
+    loc="center left",
+    bbox_to_anchor=(1, 0.5),
+)
+fig.tight_layout()
+plt.show()
+
+# +
+all_differences_results_array = np.array(all_differences_results)
+all_relative_differences_results_array = np.array(all_relative_differences_results)
+print(all_differences_results_array.shape)
+
+fig, axes = plt.subplots(2, 3, figsize=(10, 5), sharex="col", sharey="row")
+# axes = axes.flatten()
+
+variants_effective = ["other"] + variants_investigated
+
+for i, variant in enumerate([9, 2, 8]):
+    ## Plot time series
+    ax = axes[0, i]
+    dates_points = start_date + pd.to_timedelta(ts_lst_full[0], "D")
+    ax.scatter(dates_points, ys_lst_full[0][:, variant])
+    dates_smooth = start_date + pd.to_timedelta(ts_lst_smooth[0], "D")
+    ax.plot(dates_smooth, ys_lst_smooth[0][:, variant])
+    ax.set_xlim(pd.to_datetime(["2023-08-01", "2024-01-01"]))
+    ax.set_title(variants_effective[variant])
+    ax.set_ylabel("rel. abundance")
+
+    ## plot mean error
+
+    ax = axes[1, i]
+    for horizon in [0, 7, 14, 21, 28, 35, 42]:
+        ax.plot(
+            max_dates + pd.to_timedelta(horizon, "D"),
+            all_differences_results_array.mean(axis=1)[:, horizon, variant],
+            label=f"horizon={int(horizon/7)}[week]",
+            alpha=0.7,
+        )
+        # ax.legend()
+        ax.set_ylabel("mean forecast error")
+        ax.set_ylim((-0.5, 0.5))
+
 
 # Deduplicate legend entries
 handles, labels = axes[1, 0].get_legend_handles_labels()
