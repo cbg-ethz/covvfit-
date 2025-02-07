@@ -1,0 +1,58 @@
+run_name: "jn1"
+
+# Data paths
+data_dir: "../../data/main"
+data_file: "deconvolved.csv"
+var_dates_file: "var_dates.yaml"
+
+# City list
+cities:
+  - "Zürich (ZH)"
+  - "Altenrhein (SG)"
+  - "Laupen (BE)"
+  - "Lugano (TI)"
+  - "Chur (GR)"
+  - "Genève (GE)"
+
+# Variants information
+variants_full:
+  - "BA.5"
+  - "BA.2.75"
+  - "BA.2.86"
+  - "BQ.1.1"
+  - "XBB.1.5"
+  - "XBB.1.9"
+  - "XBB.1.16"
+  - "XBB.2.3"
+  - "EG.5"
+  - "JN.1"
+
+variants_investigated:
+  - "BA.2.75"
+  - "BA.2.86"
+  - "BQ.1.1"
+  - "XBB.1.5"
+  - "XBB.1.9"
+  - "XBB.1.16"
+  - "XBB.2.3"
+  - "EG.5"
+  - "JN.1"
+
+variants_evaluated:
+  - "BA.2.86"
+  - "EG.5"
+  - "JN.1"
+
+# Date parameters
+start_date: "2022-10-21"
+max_date: "2024-01-01"
+max_dates: 
+  start: "2023-08-01"
+  end: "2024-01-01"
+
+# Prediction settings
+max_horizon: 45
+
+# Smoothing parameters
+sigma: 15
+smoothing_method: "median"
