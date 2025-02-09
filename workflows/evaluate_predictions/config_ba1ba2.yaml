@@ -36,7 +36,7 @@ max_dates:
   end: "2022-02-28"
 
 # Prediction settings
-max_horizon: 45
+max_horizon: 90
 
 # Smoothing parameters
 sigma: 15

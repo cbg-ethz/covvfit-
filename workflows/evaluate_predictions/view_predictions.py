@@ -76,13 +76,12 @@ with open("config_jn1.yaml", "r") as file:
 
 
 ba1ba2_config["variants_evaluated"] = ["other"] + ba1ba2_config["variants_evaluated"]
-
 all_configs = [ba1ba2_config, jn1_config]
 all_data = [ba1ba2, jn1]
 
 # %%
-# np.array(["other"] + xbb_config["variants_investigated"])[np.argsort(xbb["ys_lst_smooth"][0].mean(axis=0))]
-
+ba1ba2_config["variants_evaluated"] = ["BA.1", "BA.2"]
+jn1_config["variants_evaluated"] = ["BA.2.86", "JN.1"]
 
 # %% [markdown]
 # # Plot results
@@ -93,13 +92,13 @@ cmap = cm.coolwarm
 colors_covsp = plot_ts.COLORS_COVSPECTRUM
 colors_covsp["other"] = "#969696"
 
-horizons = [0, 7, 14, 21, 30, 45]
+horizons = [0, 7, 14, 21, 30, 60, 90]
 
 # Create a 5-row subplot layout to include the new row
 fig, axes = plt.subplots(
-    5,
+    6,
     len(all_configs),
-    figsize=(12, 10),  # Increase figure height to accommodate extra row
+    figsize=(12, 12),  # Increase figure height to accommodate extra row
     # sharex="col",
     sharey="row",
     gridspec_kw={"hspace": 0.55},  # Adjust vertical spacing
@@ -174,7 +173,7 @@ for k, (config, proc_data) in enumerate(zip(all_configs, all_data)):
             ax.plot(
                 max_dates,
                 diff_array.mean(axis=1)[:, horizon, var_idx],
-                label=f"{int(horizon/7)}",
+                label=int(horizon),
                 color=colors[j],
             )
         ax.set_ylabel("mean err.")
@@ -183,76 +182,110 @@ for k, (config, proc_data) in enumerate(zip(all_configs, all_data)):
         ax.tick_params(axis="x", rotation=0)
 
     ## New row: Boxplot analysis for variants_evaluated
-    ax = axes[4, k]
-
-    # Compute break index
-    break_index = np.mean(
-        [np.where(smooth[:, -1] >= 0.1)[0][0] for smooth in ys_lst_smooth]
-    )
-    max_dates_idx = (
-        max_dates - pd.to_datetime(config["start_date"])
-    ) / pd.to_timedelta(1, "D")
-
-    err_before = diff_array[max_dates_idx < break_index, :, :, :]
-    err_after = diff_array[max_dates_idx >= break_index, :, :, :]
-
-    # Get the number of groups from the last index dimension
-    num_groups = err_before.shape[-1]
-
-    # Prepare data for boxplot (only for variants_evaluated)
-    boxplot_data = []
-    boxplot_labels = []
-    boxplot_colors = []
-    horizon_positions = []
-
-    for i, (condition, h) in enumerate(
-        [(c, h) for c in ["Before", "After"] for h in horizons]
-    ):
-        for var_idx, var_name in zip(variants_evaluated_index, variants_evaluated):
-            if condition == "Before":
-                data_subset = np.abs(err_before[:, :, h, var_idx]).flatten()
-            else:
-                data_subset = np.abs(err_after[:, :, h, var_idx]).flatten()
-
-            boxplot_data.append(data_subset)
-            boxplot_labels.append(f"{condition}-{h}-{var_name}")
-            boxplot_colors.append(colors_covsp[var_name])
-
-    horizon_positions = [2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35]
-
-    # Create the boxplot
-    box = ax.boxplot(
-        boxplot_data,
-        labels=boxplot_labels,
-        patch_artist=True,
-    )
-
-    # Apply colors based on the variant
-    for patch, flier, median, color in zip(
-        box["boxes"], box["fliers"], box["medians"], boxplot_colors
-    ):
-        patch.set_facecolor(color)  # Set box interior color
-        patch.set_edgecolor("black")  # Set thin black outline
-        flier.set(
-            marker=".",
-            markerfacecolor=color,
-            markeredgecolor=color,
-            markersize=1,
-            linestyle="none",
+    for cutoff, newrow in zip([0.025, 0.05, 0.10], [3, 4, 5]):
+        ax = axes[newrow, k]
+        # Compute break index
+        break_index = np.median(
+            [np.where(smooth[:, -1] >= cutoff)[0][0] for smooth in ys_lst_smooth]
         )
-        median.set(color="black")
+        max_dates_idx = (
+            max_dates - pd.to_datetime(config["start_date"])
+        ) / pd.to_timedelta(1, "D")
 
-    # Set x-ticks only at horizon positions
-    ax.set_xticks(horizon_positions)
-    ax.set_xticklabels(horizons * 2, rotation=45)
-    ax.set_ylabel("abs. err.")
-    ax.set_xlabel("horizon (days)")
-    ax.set_title("abs. pred. error before/after cutoff")
+        err_before = diff_array[max_dates_idx < break_index, :, :, :]
+        err_after = diff_array[max_dates_idx >= break_index, :, :, :]
+
+        # Get the number of groups from the last index dimension
+        num_groups = err_before.shape[-1]
+
+        # Prepare data for boxplot (only for variants_evaluated)
+        boxplot_data = []
+        boxplot_labels = []
+        boxplot_colors = []
+        horizon_positions = []
+
+        for i, (condition, h) in enumerate(
+            [(c, h) for c in ["Before", "After"] for h in horizons]
+        ):
+            for var_idx, var_name in zip(variants_evaluated_index, variants_evaluated):
+                if condition == "Before":
+                    data_subset = np.abs(err_before[:, :, h, var_idx]).flatten()
+                else:
+                    data_subset = np.abs(err_after[:, :, h, var_idx]).flatten()
+
+                boxplot_data.append(data_subset)
+                boxplot_labels.append(f"{condition}-{h}-{var_name}")
+                boxplot_colors.append(colors_covsp[var_name])
+
+        horizon_positions = [2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 38, 41]
+        horizon_positions = np.arange(1.5, 2 * len(horizons) * 2 + 1, 2).tolist()
+
+        # Create the boxplot
+        box = ax.boxplot(
+            boxplot_data,
+            labels=boxplot_labels,
+            patch_artist=True,
+        )
+
+        # Apply colors based on the variant
+        for patch, flier, median, color in zip(
+            box["boxes"], box["fliers"], box["medians"], boxplot_colors
+        ):
+            patch.set_facecolor(color)  # Set box interior color
+            patch.set_edgecolor("black")  # Set thin black outline
+            flier.set(
+                marker=".",
+                markerfacecolor=color,
+                markeredgecolor=color,
+                markersize=1,
+                linestyle="none",
+            )
+            median.set(color="black")
+
+        # Set x-ticks only at horizon positions
+        ax.set_xticks(horizon_positions)
+        ax.set_xticklabels(horizons * 2, rotation=45)
+        ax.set_ylabel("abs. err.")
+        ax.set_xlabel("horizon (days)")
+        ax.set_title(f"abs. pred. error before/after {cutoff*100}% cutoff")
+
+        # add vline for cutoff
+
+        ax.axvline(
+            x=np.median(horizon_positions),
+            color="black",
+            linestyle="dashed",
+            linewidth=1.5,
+            # alpha=0.8,
+        )
+
+        # add cutoff to other plots
+        break_date = pd.to_timedelta(break_index, "D") + pd.to_datetime(
+            config["start_date"]
+        )
+        for i in range(3):
+            axes[i, k].axvline(
+                x=break_date,
+                color="black",
+                linestyle="dashed",
+                linewidth=1.5,
+                # alpha=0.8,
+            )
+            axes[i, k].text(
+                break_date,
+                axes[i, k].get_ylim()[1] * 0.9,  # Position at 90% of y-axis max
+                f"{cutoff * 100}%",
+                color="black",
+                fontsize=10,
+                ha="right",
+                va="top",
+                rotation=90,
+            )
 
 
 ## Legend for horizons
 # Deduplicate legend entries
-handles, labels = axes[3, 1].get_legend_handles_labels()
+handles, labels = axes[2, 1].get_legend_handles_labels()
 unique_labels = {}
 unique_handles = []
 for handle, label in zip(handles, labels):
@@ -266,7 +299,7 @@ fig.legend(
     [z for _, z in unique_handles],
     loc="center",
     bbox_to_anchor=(1, 0.5),
-    title="horizon (weeks)",
+    title="horizon (days)",
 )
 
 ## Legend for variants
@@ -293,19 +326,17 @@ fig.legend(
     title="Variants",
 )
 
-# Add the existing horizon legend below it
-fig.legend(
-    [h for h, _ in unique_handles],
-    [z for _, z in unique_handles],
-    loc="center",
-    bbox_to_anchor=(1, 0.5),
-    title="Horizon (weeks)",
-)
 
 # Share x-axis for rows 0,1,2,3 within each column
 for k in range(len(all_configs)):  # Iterate over columns
-    for row in range(1, 4):  # Rows 1,2,3 share x-axis with row 0 in the same column
+    for row in range(1, 3):  # Rows 1,2,3 share x-axis with row 0 in the same column
         axes[row, k].sharex(axes[0, k])
+
+# remove x label for second to last row
+axes[-3, 0].set_xlabel("")
+axes[-3, 1].set_xlabel("")
+axes[-2, 0].set_xlabel("")
+axes[-2, 1].set_xlabel("")
 
 
 for k in range(len(all_configs)):  # Iterate over columns
@@ -320,7 +351,7 @@ for k in range(len(all_configs)):  # Iterate over columns
 panel_labels = list(string.ascii_lowercase)
 
 # Loop through all subplots and label them
-for row in range(5):  # 5 rows
+for row in range(6):  # 5 rows
     for col in range(len(all_configs)):  # Number of columns
         axes[row, col].text(
             -0.1,
@@ -333,5 +364,73 @@ for row in range(5):  # 5 rows
             ha="right",
         )
 
+fig.tight_layout()
+plt.show()
+
+
+# %%
+threshs = np.linspace(0.01, 0.25, 1000)
+horizons = [7, 14, 21, 30, 45, 60, 90]
+
+norm = mcolors.Normalize(vmin=min(horizons), vmax=max(horizons))
+colors = [cmap(norm(h)) for h in horizons]
+
+fig, axes = plt.subplots(2, 2, figsize=(8, 4), sharex="col", sharey="row")
+
+for k, (config, proc_data) in enumerate(zip(all_configs, all_data)):
+    variants_investigated = config["variants_investigated"]
+    variants_effective = ["other"] + variants_investigated
+    variants_evaluated = config["variants_evaluated"]
+    start_date = pd.to_datetime(config["start_date"])
+    max_dates = pd.date_range(
+        start=config["max_dates"]["start"], end=config["max_dates"]["end"], freq="D"
+    )
+    (
+        diff_array,
+        rel_diff_array,
+        ys_lst_full,
+        ts_lst_full,
+        ts_lst_smooth,
+        ys_lst_smooth,
+    ) = proc_data.values()
+
+    err_before_s = []
+    err_after_s = []
+    for thresh in threshs:
+        break_index = np.median(
+            [np.where(smooth[:, -1] >= thresh)[0][0] for smooth in ys_lst_smooth]
+        )
+        max_dates_idx = (
+            max_dates - pd.to_datetime(config["start_date"])
+        ) / pd.to_timedelta(1, "D")
+
+        err_before = diff_array[max_dates_idx < break_index, :, :, :]
+        err_after = diff_array[max_dates_idx >= break_index, :, :, :]
+
+        err_before_s.append(np.abs(err_before).mean(axis=(0, 1)))
+        err_after_s.append(np.abs(err_after).mean(axis=(0, 1)))
+
+    axes[0, k].plot(threshs, np.array(err_before_s)[:, 0, -1], c="black", label="0")
+    axes[1, k].plot(threshs, np.array(err_after_s)[:, 0, -1], c="black")
+    for j, horizon in enumerate(horizons):
+        axes[0, k].plot(
+            threshs, np.array(err_before_s)[:, horizon, -1], c=colors[j], label=horizon
+        )
+        axes[1, k].plot(threshs, np.array(err_after_s)[:, horizon, -1], c=colors[j])
+
+    axes[0, k].set_title(f"{variants_effective[-1]} before threshold")
+    axes[1, k].set_title(f"{variants_effective[-1]} after threshold")
+
+for i in [0, 1]:
+    for j in [0, 1]:
+        axes[i, j].set_ylabel("mean abs. err.")
+        axes[i, j].set_xlabel("threshold")
+
+handles, labels = axes[0, 0].get_legend_handles_labels()
+
+# Add unique legend
+fig.legend(
+    handles, labels, loc="center left", bbox_to_anchor=(1, 0.5), title="horizon (days)"
+)
 fig.tight_layout()
 plt.show()
