@@ -91,8 +91,10 @@ rule merge_data:
         df_total = pd.read_csv(input.total)
         merged_df = df_total.copy()
 
+        variant_names = []
         for variant_file in input.variants:
             variant = variant_file.split("/")[-1].replace("_counts.csv", "")
+            variant_names.append(variant)
             df_variant = pd.read_csv(variant_file).rename(columns={"count": variant})
             merged_df = pd.merge(merged_df, df_variant, on=["date", "division"], how="left")
 
@@ -117,16 +119,19 @@ rule merge_data:
             aliasor = Aliasor()
             
             # Convert both lineages to uncompressed forms
-            full_parent = aliasor.uncompress(parent)
-            full_child = aliasor.uncompress(child)
+            full_parent = aliasor.uncompress(parent).rstrip("*")
+            full_child = aliasor.uncompress(child).rstrip("*")
+
+            is_child = full_child.startswith(full_parent + ".")
             
             # Check if the child starts with the parent
-            return full_child.startswith(full_parent + ".")
+            print(f"parent {parent} child {child} is it {is_child}")
+            return is_child
 
 
         # Adjust for children using the is_parent_lineage function, handling nested hierarchies
-        def adjust_for_children(data, variants):
-            columns = variants
+        def adjust_for_children(data, variant_names):
+            columns = variant_names
             adjusted_data = data.copy()
             aliasor = Aliasor()  # Initialize Aliasor
 
@@ -142,9 +147,11 @@ rule merge_data:
                     adjusted_data[parent] -= adjusted_data[children].sum(axis=1)
             
             return adjusted_data
+        print(f"input_variants = {input.variants}")
+        print(f"variant_names = {variant_names}")
 
-        merged_df = adjust_for_children(merged_df, input.variants)
-        merged_df.to_csv(output[0], index=False)
+        merged_df_adj = adjust_for_children(merged_df, variant_names)
+        merged_df_adj.to_csv(output[0], index=False)
 
 # Rule to filter and normalize data
 rule filter_and_normalize_data:
@@ -259,9 +266,35 @@ rule fit_clinical_data:
         theta0 = qm.construct_theta0(n_cities=len(cities), n_variants=len(variants_effective))
         solution = qm.jax_multistart_minimize(loss, theta0, n_starts=params.n_starts)
 
+        ## compute fitted values
+        ys_fitted = qm.fitted_values(
+            ts_lst_scaled, theta=solution.x, cities=cities, n_variants=len(params.variants_investigated) + 1 
+        )
+
+        ## compute covariance matrix
+        covariance = qm.get_covariance(loss, solution.x)
+
+        overdispersion_tuple = qm.compute_overdispersion(
+            observed=ys_effective,
+            predicted=ys_fitted,
+        )
+
+        overdisp_fixed = overdispersion_tuple.overall
+
+        ## scale covariance by overdisp
+        covariance_scaled = overdisp_fixed * covariance
+
+        ## compute standard errors and confidence intervals of the estimates
+        standard_errors_estimates = qm.get_standard_errors(covariance_scaled)
+        confints_estimates = qm.get_confidence_intervals(
+            solution.x, standard_errors_estimates, confidence_level=0.95
+        )
+
         # Save the solution
         solution_data = {
             "solution": solution.x.tolist(),
+            "confint_lower": confints_estimates[0].tolist(),
+            "confint_upper": confints_estimates[1].tolist(),
             "variants": variants_investigated,
             "t_min": float(t_min),
             "t_max": float(t_max),
@@ -299,6 +332,11 @@ rule gather_clinical_results:
                 # Add each element of "solution" as its own column
                 for i, value in enumerate(data["solution"]):
                     flattened_result[f"solution_{i}"] = value
+                # Add each confint boundary its own column
+                for i, value in enumerate(data["confint_lower"]):
+                    flattened_result[f"confint_lower_{i}"] = value
+                for i, value in enumerate(data["confint_upper"]):
+                    flattened_result[f"confint_upper_{i}"] = value
 
                 all_results.append(flattened_result)
 
@@ -426,14 +464,42 @@ rule fit_wastewater_data:
         theta0 = qm.construct_theta0(n_cities=len(cities), n_variants=len(variants_effective))
         solution = qm.jax_multistart_minimize(loss, theta0, n_starts=params.n_starts)
 
+        ## compute fitted values
+        ys_fitted = qm.fitted_values(
+            ts_lst_scaled, theta=solution.x, cities=cities, n_variants=len(params.variants_investigated) + 1 
+        )
+
+        ## compute covariance matrix
+        covariance = qm.get_covariance(loss, solution.x)
+
+        overdispersion_tuple = qm.compute_overdispersion(
+            observed=ys_effective,
+            predicted=ys_fitted,
+        )
+
+        overdisp_fixed = overdispersion_tuple.overall
+
+        ## scale covariance by overdisp
+        covariance_scaled = overdisp_fixed * covariance
+
+        ## compute standard errors and confidence intervals of the estimates
+        standard_errors_estimates = qm.get_standard_errors(covariance_scaled)
+        confints_estimates = qm.get_confidence_intervals(
+            solution.x, standard_errors_estimates, confidence_level=0.95
+        )
+
         # Save the solution
         solution_data = {
             "solution": solution.x.tolist(),
+            "confint_lower": confints_estimates[0].tolist(),
+            "confint_upper": confints_estimates[1].tolist(),
             "variants": variants_effective,
             "t_min": float(t_min),
             "t_max": float(t_max),
             "end_date": params.end_date
         }
+
+        # np.savez(ts_lst_scaled) 
         with open(output[0], "w") as f:
             json.dump(solution_data, f)
 
@@ -464,6 +530,11 @@ rule gather_wastewater_results:
                 # Add each element of "solution" as its own column
                 for i, value in enumerate(data["solution"]):
                     flattened_result[f"solution_{i}"] = value
+                # Add each confint boundary its own column
+                for i, value in enumerate(data["confint_lower"]):
+                    flattened_result[f"confint_lower_{i}"] = value
+                for i, value in enumerate(data["confint_upper"]):
+                    flattened_result[f"confint_upper_{i}"] = value
 
                 all_results.append(flattened_result)
 

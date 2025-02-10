@@ -1,0 +1,43 @@
+run_name: "ba1ba2"
+
+# Data paths
+data_dir: "../../data/main"
+data_file: "deconvolved.csv"
+var_dates_file: "var_dates.yaml"
+
+# City list
+cities:
+  - "Zürich (ZH)"
+  - "Altenrhein (SG)"
+  - "Laupen (BE)"
+  - "Lugano (TI)"
+  - "Chur (GR)"
+  - "Genève (GE)"
+
+# Variants information
+variants_full:
+  - "B.1.617.2"
+  - "BA.1"
+  - "BA.2"
+
+variants_investigated:
+  - "BA.1"
+  - "BA.2"
+
+variants_evaluated:
+  - "BA.1"
+  - "BA.2"
+
+# Date parameters
+start_date: "2021-11-20"
+max_date: "2022-02-28"
+max_dates: 
+  start: "2021-11-27"
+  end: "2022-02-28"
+
+# Prediction settings
+max_horizon: 90
+
+# Smoothing parameters
+sigma: 15
+smoothing_method: "median"
