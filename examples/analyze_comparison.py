@@ -45,6 +45,8 @@ import math
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
+import matplotlib.lines as mlines
+
 
 # %%
 # %matplotlib inline
@@ -287,6 +289,12 @@ def load_data(folder, divisions, variants_evaluated, reference_variant):
         clinical_df[f"solution_{i}_normalized"] = (
             clinical_df[f"solution_{i}"] / clinical_df["t_max"]
         )
+        clinical_df[f"confint_lower_{i}_normalized"] = (
+            clinical_df[f"confint_lower_{i}"] / clinical_df["t_max"]
+        )
+        clinical_df[f"confint_upper_{i}_normalized"] = (
+            clinical_df[f"confint_upper_{i}"] / clinical_df["t_max"]
+        )
 
     # Get indices for evaluated and reference variants
     variants_evaluated_index = np.where(
@@ -338,7 +346,7 @@ def make_plot(
 ):
     colors_covsp = plot_ts.COLORS_COVSPECTRUM
     ax = axes[1]
-    # Top plot: Wastewater and clinical normalized solutions
+    # Top plot: Wastewater normalized solutions
     for i, var_idx in enumerate(variants_evaluated_index):
         variant = config["variants_investigated"][var_idx]
         ax.plot(
@@ -349,10 +357,46 @@ def make_plot(
             )
             * 7
             * 100,
-            label=f"Wastewater {variants[i]}",
+            label=f"{variant}",
             color=colors_covsp[variant.rstrip("*")],
             linestyle="-",
         )
+        ax.fill_between(
+            wastewater_df["end_date"],
+            (
+                wastewater_df[f"confint_lower_{var_idx}_normalized"]
+                - wastewater_df[f"solution_{variants_reference_index}_normalized"]
+            )
+            * 7
+            * 100,
+            (
+                wastewater_df[f"confint_upper_{var_idx}_normalized"]
+                - wastewater_df[f"solution_{variants_reference_index}_normalized"]
+            )
+            * 7
+            * 100,
+            color=colors_covsp[variant.rstrip("*")],
+            alpha=0.2,  # Transparency for the shaded area
+        )
+        # ax.plot(
+        #     clinical_df["end_date"],
+        #     (clinical_df[f"solution_{var_idx}_normalized"]
+        #      - clinical_df[f"solution_{variants_reference_index}_normalized"])*7*100,
+        #     label=f"Clinical {variants[i]}",
+        #     color = colors_covsp[variant.rstrip("*")],
+        #     linestyle="--",
+        # )
+
+    ax.set_ylabel("rel. fitness / week")
+    ax.set_title("Wastewater-Derived Selection advantage")
+    ax.set_ylim(0, 0.2 * 7 * 100)
+
+    ## clinical solutions
+
+    ax = axes[2]
+    # Top plot: Wastewater and clinical normalized solutions
+    for i, var_idx in enumerate(variants_evaluated_index):
+        variant = config["variants_investigated"][var_idx]
         ax.plot(
             clinical_df["end_date"],
             (
@@ -361,13 +405,30 @@ def make_plot(
             )
             * 7
             * 100,
-            label=f"Clinical {variants[i]}",
+            label=f"{variant}",
             color=colors_covsp[variant.rstrip("*")],
             linestyle="--",
         )
+        ax.fill_between(
+            clinical_df["end_date"],
+            (
+                clinical_df[f"confint_lower_{var_idx}_normalized"]
+                - clinical_df[f"solution_{variants_reference_index}_normalized"]
+            )
+            * 7
+            * 100,
+            (
+                clinical_df[f"confint_upper_{var_idx}_normalized"]
+                - clinical_df[f"solution_{variants_reference_index}_normalized"]
+            )
+            * 7
+            * 100,
+            color=colors_covsp[variant.rstrip("*")],
+            alpha=0.2,  # Transparency for the shaded area
+        )
 
     ax.set_ylabel("rel. fitness / week")
-    ax.set_title(f"Selection Advantage, relative to {reference_variant}")
+    ax.set_title(f"Clinical-Derived Selection Advantage")
     ax.set_ylim(0, 0.2 * 7 * 100)
 
     # Ensure the 'date' column is in datetime format
@@ -384,7 +445,7 @@ def make_plot(
 
     ## plot samples
 
-    ax = axes[2]
+    ax = axes[3]
 
     # Plot  bar chart
 
@@ -481,15 +542,16 @@ def make_plot(
 
     # Format x-axis for better readability
     plt.setp(ax.xaxis.get_majorticklabels(), rotation=0, ha="right")
-    axes[2].xaxis.set_major_locator(
+    axes[3].xaxis.set_major_locator(
         mdates.MonthLocator(bymonthday=1)
     )  # First day of each month
-    axes[2].xaxis.set_major_formatter(mdates.DateFormatter("%b '%y"))
-    axes[2].set_xlabel("")
+    axes[3].xaxis.set_major_formatter(mdates.DateFormatter("%b '%y"))
+    axes[3].set_xlabel("")
     # Remove x-ticks and labels for the first two subplots
     axes[0].tick_params(labelbottom=False)  # Hide x-axis labels for axes[0]
     axes[0].set_xlabel("")
     axes[1].tick_params(labelbottom=False)  # Hide x-axis labels for axes[1]
+    axes[2].tick_params(labelbottom=False)  # Hide x-axis labels for axes[1]
 
     # Define x-axis limits based on the earliest and latest date in all datasets
     x_min = wastewater_df["end_date"].min()
@@ -502,7 +564,7 @@ def make_plot(
 
 # %%
 # Plot
-fig, axes = plt.subplots(3, 2, figsize=(10, 6), sharey="none")
+fig, axes = plt.subplots(4, 2, figsize=(10, 8), sharey="none")
 
 
 variants = ["BA.2.86*", "JN.1*"]
@@ -579,6 +641,7 @@ make_plot(
 axes[0, 1].set_xlim([pd.to_datetime("2023-08-01"), pd.to_datetime("2024-01-01")])
 axes[1, 1].set_xlim([pd.to_datetime("2023-08-01"), pd.to_datetime("2024-01-01")])
 axes[2, 1].set_xlim([pd.to_datetime("2023-08-01"), pd.to_datetime("2024-01-01")])
+axes[3, 1].set_xlim([pd.to_datetime("2023-08-01"), pd.to_datetime("2024-01-01")])
 axes[0, 0].set_ylim([0, 1])
 axes[0, 1].set_ylim([0, 1])
 
@@ -596,7 +659,7 @@ break_dates = pd.to_datetime(
 
 # First three vlines for axes[0,0] and axes[1,0]
 for i in range(3):
-    for ax in [axes[0, 0], axes[1, 0]]:
+    for ax in [axes[0, 0], axes[1, 0], axes[2, 0]]:
         ax.axvline(
             x=break_dates[i],
             color="black",
@@ -616,7 +679,7 @@ for i in range(3):
 
 # Next three vlines for axes[0,1] and axes[1,1]
 for i in range(3, 6):
-    for ax in [axes[0, 1], axes[1, 1]]:
+    for ax in [axes[0, 1], axes[1, 1], axes[2, 1]]:
         ax.axvline(
             x=break_dates[i],
             color="black",
@@ -638,29 +701,59 @@ for i in range(3, 6):
 # axes[2,0].set_yscale("log")
 # axes[2,1].set_yscale("log")
 
+# Collect legend handles and labels from all axes
+handles = []
+labels = []
+for ax in axes.flat:  # Iterate through all axes in the figure
+    h, l = ax.get_legend_handles_labels()
+    handles.extend(h)
+    labels.extend(l)
 
-fig.legend(loc="center left", bbox_to_anchor=(1, 0.5))
+# Deduplicate legend entries
+unique_legend = {}
+unique_handles = []
+for handle, label in zip(handles, labels):
+    if label not in unique_legend:
+        unique_legend[label] = handle
+        unique_handles.append((handle, label))
+
+# Create custom line handles for Wastewater and Clinical
+wastewater_line = mlines.Line2D(
+    [], [], color="black", linestyle="-", label="Wastewater"
+)
+clinical_line = mlines.Line2D([], [], color="black", linestyle="--", label="Clinical")
+
+# Add custom handles to the legend
+unique_handles.insert(0, (wastewater_line, "Wastewater"))
+unique_handles.insert(1, (clinical_line, "Clinical"))
+
+# Apply the deduplicated legend
+fig.legend(
+    [h for h, _ in unique_handles],
+    [l for _, l in unique_handles],
+    loc="center left",
+    bbox_to_anchor=(1, 0.5),
+)
+
+import string
+
+# Generate panel labels: a, b, c, d, e, f, g, ...
+panel_labels = list(string.ascii_lowercase)
+# Loop through all subplots and label them
+for i, ax in enumerate(axes.flatten()):
+    ax.text(
+        -0.1,
+        1.2,  # Position: slightly above each subplot
+        panel_labels[i],  # Get the next letter
+        transform=ax.transAxes,  # Use subplot-relative coordinates
+        fontsize=12,
+        fontweight="bold",
+        va="top",
+        ha="right",
+    )
+
+
+# fig.legend(loc="center left", bbox_to_anchor=(1, 0.5))
 # Ensure layout is correct
 plt.tight_layout()
 plt.show()
-
-# %%
-variants = ["BA.2.86*", "JN.1*"]
-divisions = ["Zürich", "Geneva", "Ticino", "Graubünden", "Bern", "Sankt Gallen"]
-variants_evaluated = ["BA.2.86*", "JN.1*"]
-reference_variant = "EG.5*"
-folder = "config_jn1"
-
-(
-    config,
-    grouped_ww_data,
-    clin_freq,
-    wastewater_df,
-    clinical_df,
-    grouped_clinical_data,
-    variants_evaluated_index,
-    variants_reference_index,
-    x_min,
-    x_max,
-    merged_ww_data,
-) = load_data(folder, divisions, variants_evaluated, reference_variant).values()
