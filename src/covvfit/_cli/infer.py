@@ -296,6 +296,13 @@ def infer(
     pprint(f"Relative growth advantages (per day): {relative_growths_per_day}")
     pprint(f"Relative growth advantages (per week): {relative_growths_per_week}")
 
+    with open(output / "results.yaml", "w") as fh:
+        payload = {
+            "relative_growth_advantages_day": relative_growths_per_day.tolist(),
+            "relative_growth_advantages_week": relative_growths_per_week.tolist(),
+        }
+        yaml.safe_dump(payload, fh)
+
     ## compute fitted values
     ys_fitted = qm.fitted_values(
         ts_lst_scaled, theta=theta_star, cities=cities, n_variants=n_variants_effective
