@@ -23,6 +23,8 @@ subplots-from-axsize = "^0.1.9"
 pango-aliasor = "^0.3.0"
 typer = "^0.15.1"
 jaxtyping = "^0.2.36"
+pydantic = "^2.10.6"
+pyyaml = "^6.0.2"
 
 [tool.poetry.scripts]
 covvfit = "covvfit.cli:main"

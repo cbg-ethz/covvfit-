@@ -28,6 +28,7 @@ COLORS_COVSPECTRUM: dict[Variant, Color] = {
     "XBB.2.3": "#f5e424",
     "EG.5": "#b4e80b",
     "BA.2.86": "#FF20E0",
+    # TODO(Pawel, David): Use consistent colors with Covspectrum
     "JN.1": "#00e9ff",  # improv
     "KP.2": "#D16666",  # improv
     "KP.3": "#66A366",  # improv

@@ -4,8 +4,10 @@ from typing import Annotated, NamedTuple, Optional
 
 import jax
 import jax.numpy as jnp
+import matplotlib.patches as mpatches
 import matplotlib.ticker as ticker
 import pandas as pd
+import pydantic
 import typer
 import yaml
 
@@ -105,20 +107,79 @@ def _set_matplotlib_backend(matplotlib_backend: Optional[str]):
         matplotlib.use(matplotlib_backend)
 
 
+class PredictionRegion(pydantic.BaseModel):
+    region_color: str = "grey"
+    region_alpha: pydantic.confloat(ge=0.0, le=1.0) = 0.1
+    linestyle: str = ":"
+
+
+class PlotDimensions(pydantic.BaseModel):
+    panel_width: float = 4.0
+    panel_height: float = 1.5
+    dpi: int = 350
+
+    wspace: float = 1.0
+    hspace: float = 0.5
+
+    left: float = 1.0
+    right: float = 1.5
+    top: float = 0.7
+    bottom: float = 0.5
+
+
+class PlotSettings(pydantic.BaseModel):
+    dimensions: PlotDimensions = pydantic.Field(default_factory=PlotDimensions)
+    prediction: PredictionRegion = pydantic.Field(default_factory=PredictionRegion)
+    variant_colors: dict[str, str] = pydantic.Field(
+        default_factory=lambda: plot_ts.COLORS_COVSPECTRUM
+    )
+
+
+class Config(pydantic.BaseModel):
+    variants: list[str] = pydantic.Field(default_factory=lambda: [])
+    plot: PlotSettings = pydantic.Field(default_factory=PlotSettings)
+
+
+def _parse_config(
+    config_path: Optional[str],
+    variants: Optional[list[str]],
+) -> Config:
+    if config_path is None:
+        config = Config()
+    else:
+        with open(config_path) as fh:
+            payload = yaml.safe_load(fh)
+        config = Config(**payload)
+
+    if variants is not None:
+        config.variants = variants
+
+    if len(config.variants) == 0:
+        raise ValueError("No variants have been specified.")
+
+    return config
+
+
 def infer(
     data: Annotated[str, typer.Argument(help="CSV with deconvolved data")],
     variant_dates: Annotated[str, typer.Argument(help="YAML file with variant dates")],
     output: Annotated[str, typer.Argument(help="Output directory")],
+    config: Annotated[
+        Optional[str],
+        typer.Option("--config", help="Path to the YAML file with configuration."),
+    ] = None,
     var: Annotated[
-        list[str],
+        Optional[list[str]],
         typer.Option(
-            "--var", "-v", help="Variant names to be included in the analysis."
+            "--var",
+            "-v",
+            help="Variant names to be included in the analysis. Note: override the settings in the config file (--config).",
         ),
-    ],
+    ] = None,
     data_separator: Annotated[
         str,
         typer.Option(
-            "--data-separator", help="Separator to be used to read the CSV file"
+            "--data-separator", help="Separator to be used to read the CSV file."
         ),
     ] = "\t",
     max_days: Annotated[
@@ -166,7 +227,14 @@ def infer(
     """Runs growth advantage inference."""
     _set_matplotlib_backend(matplotlib_backend)
 
-    variants_investigated = var
+    if var is None and config is None:
+        raise ValueError(
+            "The variant names are not specified. Use `--config` argument or `-v` to specify them."
+        )
+
+    config: Config = _parse_config(config_path=config, variants=var)
+
+    variants_investigated = config.variants
 
     bundle = _process_data(
         data_path=data,
@@ -217,9 +285,23 @@ def infer(
 
     theta_star = solution.x  # The maximum quasilikelihood estimate
 
-    pprint(
-        f"Relative growth advantages: {qm.get_relative_growths(theta_star, n_variants=n_variants_effective)}"
+    relative_growths = qm.get_relative_growths(
+        theta_star, n_variants=n_variants_effective
     )
+
+    DAYS_IN_A_WEEK = 7.0
+    relative_growths_per_day = relative_growths / time_scaler.time_unit
+    relative_growths_per_week = DAYS_IN_A_WEEK * relative_growths_per_day
+
+    pprint(f"Relative growth advantages (per day): {relative_growths_per_day}")
+    pprint(f"Relative growth advantages (per week): {relative_growths_per_week}")
+
+    with open(output / "results.yaml", "w") as fh:
+        payload = {
+            "relative_growth_advantages_day": relative_growths_per_day.tolist(),
+            "relative_growth_advantages_week": relative_growths_per_week.tolist(),
+        }
+        yaml.safe_dump(payload, fh)
 
     ## compute fitted values
     ys_fitted = qm.fitted_values(
@@ -284,10 +366,19 @@ def infer(
 
     # Create a plot
 
-    colors = [plot_ts.COLORS_COVSPECTRUM[var] for var in variants_investigated]
+    colors = [config.plot.variant_colors[var] for var in variants_investigated]
+
+    plot_dimensions = config.plot.dimensions
 
     figure_spec = plot.arrange_into_grid(
-        len(cities), axsize=(4, 1.5), dpi=350, wspace=1
+        len(cities),
+        axsize=(plot_dimensions.panel_width, plot_dimensions.panel_height),
+        dpi=plot_dimensions.dpi,
+        wspace=plot_dimensions.wspace,
+        top=plot_dimensions.top,
+        bottom=plot_dimensions.bottom,
+        left=plot_dimensions.left,
+        right=plot_dimensions.right,
     )
 
     def plot_city(ax, i: int) -> None:
@@ -295,10 +386,25 @@ def infer(
             """We don't plot the artificial 0th variant 'other'."""
             return arr[:, 1:]
 
+        # Mark region as predicted
+        prediction_region_color = config.plot.prediction.region_color
+        prediction_region_alpha = config.plot.prediction.region_alpha
+        prediction_linestyle = config.plot.prediction.linestyle
+        ax.axvspan(
+            jnp.min(ts_pred_lst[i]),
+            jnp.max(ts_pred_lst[i]),
+            color=prediction_region_color,
+            alpha=prediction_region_alpha,
+        )
+
         # Plot fits in observed and unobserved time intervals.
         plot_ts.plot_fit(ax, ts_lst[i], remove_0th(ys_fitted[i]), colors=colors)
         plot_ts.plot_fit(
-            ax, ts_pred_lst[i], remove_0th(ys_pred[i]), colors=colors, linestyle="--"
+            ax,
+            ts_pred_lst[i],
+            remove_0th(ys_pred[i]),
+            colors=colors,
+            linestyle=prediction_linestyle,
         )
 
         plot_ts.plot_confidence_bands(
@@ -320,7 +426,11 @@ def infer(
         # Plot the complements
         plot_ts.plot_complement(ax, ts_lst[i], remove_0th(ys_fitted[i]), alpha=0.3)
         plot_ts.plot_complement(
-            ax, ts_pred_lst[i], remove_0th(ys_pred[i]), linestyle="--", alpha=0.3
+            ax,
+            ts_pred_lst[i],
+            remove_0th(ys_pred[i]),
+            linestyle=prediction_linestyle,
+            alpha=0.3,
         )
 
         # format axes and title
@@ -337,5 +447,11 @@ def infer(
         ax.set_title(cities[i])
 
     figure_spec.map(plot_city, range(len(cities)))
+
+    handles = [
+        mpatches.Patch(color=col, label=name)
+        for name, col in zip(variants_investigated, colors)
+    ]
+    figure_spec.fig.legend(handles=handles, loc="outside center right", frameon=False)
 
     figure_spec.fig.savefig(output / "figure.pdf")
