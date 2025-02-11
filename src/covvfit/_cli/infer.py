@@ -4,6 +4,7 @@ from typing import Annotated, NamedTuple, Optional
 
 import jax
 import jax.numpy as jnp
+import matplotlib.patches as mpatches
 import matplotlib.ticker as ticker
 import pandas as pd
 import typer
@@ -294,7 +295,7 @@ def infer(
     colors = [plot_ts.COLORS_COVSPECTRUM[var] for var in variants_investigated]
 
     figure_spec = plot.arrange_into_grid(
-        len(cities), axsize=(4, 1.5), dpi=350, wspace=1, left=1, top=0.7
+        len(cities), axsize=(4, 1.5), dpi=350, wspace=1, left=1, top=0.7, right=2
     )
 
     def plot_city(ax, i: int) -> None:
@@ -344,5 +345,11 @@ def infer(
         ax.set_title(cities[i])
 
     figure_spec.map(plot_city, range(len(cities)))
+
+    handles = [
+        mpatches.Patch(color=col, label=name)
+        for name, col in zip(variants_investigated, colors)
+    ]
+    figure_spec.fig.legend(handles=handles, loc="outside center right", frameon=False)
 
     figure_spec.fig.savefig(output / "figure.pdf")
