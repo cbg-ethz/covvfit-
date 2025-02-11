@@ -303,10 +303,25 @@ def infer(
             """We don't plot the artificial 0th variant 'other'."""
             return arr[:, 1:]
 
+        # Mark region as predicted
+        prediction_region_color = "grey"
+        prediction_region_alpha = 0.1
+        prediction_linestyle = ":"
+        ax.axvspan(
+            jnp.min(ts_pred_lst[i]),
+            jnp.max(ts_pred_lst[i]),
+            color=prediction_region_color,
+            alpha=prediction_region_alpha,
+        )
+
         # Plot fits in observed and unobserved time intervals.
         plot_ts.plot_fit(ax, ts_lst[i], remove_0th(ys_fitted[i]), colors=colors)
         plot_ts.plot_fit(
-            ax, ts_pred_lst[i], remove_0th(ys_pred[i]), colors=colors, linestyle="--"
+            ax,
+            ts_pred_lst[i],
+            remove_0th(ys_pred[i]),
+            colors=colors,
+            linestyle=prediction_linestyle,
         )
 
         plot_ts.plot_confidence_bands(
