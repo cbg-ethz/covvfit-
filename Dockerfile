@@ -1,8 +1,4 @@
 FROM --platform=linux/amd64 python:3.11-slim
-WORKDIR /app
-COPY . .
-RUN pip install --no-cache-dir .
-RUN which covvfit
-
+RUN pip install --no-cache-dir covvfit==0.2.0
 ENTRYPOINT ["covvfit"]
 
