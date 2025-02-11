@@ -287,7 +287,7 @@ def infer(
     colors = [plot_ts.COLORS_COVSPECTRUM[var] for var in variants_investigated]
 
     figure_spec = plot.arrange_into_grid(
-        len(cities), axsize=(4, 1.5), dpi=350, wspace=1
+        len(cities), axsize=(4, 1.5), dpi=350, wspace=1, left=1, top=0.7
     )
 
     def plot_city(ax, i: int) -> None:
