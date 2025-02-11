@@ -217,9 +217,16 @@ def infer(
 
     theta_star = solution.x  # The maximum quasilikelihood estimate
 
-    pprint(
-        f"Relative growth advantages: {qm.get_relative_growths(theta_star, n_variants=n_variants_effective)}"
+    relative_growths = qm.get_relative_growths(
+        theta_star, n_variants=n_variants_effective
     )
+
+    DAYS_IN_A_WEEK = 7.0
+    relative_growths_per_day = relative_growths / time_scaler.time_unit
+    relative_growths_per_week = DAYS_IN_A_WEEK * relative_growths_per_day
+
+    pprint(f"Relative growth advantages (per day): {relative_growths_per_day}")
+    pprint(f"Relative growth advantages (per week): {relative_growths_per_week}")
 
     ## compute fitted values
     ys_fitted = qm.fitted_values(
