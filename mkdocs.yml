@@ -17,14 +17,14 @@ theme:
       toggle:
         icon: material/toggle-switch-off-outline 
         name: Switch to dark mode
-      primary: teal
-      accent: purple 
+      primary: indigo
+      accent: indigo
     - scheme: slate 
       toggle:
         icon: material/toggle-switch
         name: Switch to light mode    
-      primary: teal
-      accent: lime
+      primary: grey
+      accent: grey
 
 plugins:
   - search
@@ -37,8 +37,10 @@ plugins:
             show_root_heading: true
 
 nav:
-  - Documentation: index.md
+  - Overview: index.md
+  - Command line workflow: cli.md
   - API Reference: api.md
+  - Statistical models: models.md
 
 repo_name: covvfit
 repo_url: https://github.com/cbg-ethz/covvfit
