@@ -17,6 +17,8 @@ We recommend to start using *Covvfit* as a command line tool, with the tutorial 
 *Covvfit* uses deconvolved wastewater data, accepting relative abundances of different variants measured at different locations and times.
 Tools such as [LolliPop](https://github.com/cbg-ethz/LolliPop) or [Freyja](https://github.com/andersen-lab/Freyja/) can be used to deconvolve wastewater data. 
 
+Note, however, that the deconvolution procedure should not smooth abundance results. For more information on this topic, see [here](running_deconv/lollipop.md).
+
 **Can *Covvfit* predict emergence of new variants?**
 
 No, *Covvfit* explicitly assumes that no new variants emerge in the considered timeframe, so its predictions are unlikely to hold on longer timescales.
