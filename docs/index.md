@@ -8,7 +8,7 @@ It consists of command line tools, which can be included in the existing workflo
 
 ## FAQ
 
-**How do I run it on my data?**
+**How do I run *Covvfit* on my data?**
 
 We recommend to start using *Covvfit* as a command line tool, with the tutorial available [here](cli.md). 
 
@@ -19,14 +19,17 @@ Tools such as [LolliPop](https://github.com/cbg-ethz/LolliPop) or [Freyja](https
 
 **Can *Covvfit* predict emergence of new variants?**
 
-No, *Covvfit* explicitly assumes that no new variants emerge and its predictions are unlikely to hold on longer timescales.
-The underlying model also cannot take into account changes in the transmission dynamics or immune response, so that it cannot predict the effects of vaccination programs or lockdowns.  
+No, *Covvfit* explicitly assumes that no new variants emerge in the considered timeframe, so its predictions are unlikely to hold on longer timescales.
+The underlying model also cannot take into account changes in the transmission dynamics or immune response, so that it cannot predict the effects of vaccination programs or lockdowns.
 
 **How can I contact the developers?**
 
 In case you find a bug, want to ask about integrating *Covvfit* into your pipeline, or have any other feedback, we would love to hear it via our [issue tracker](https://github.com/cbg-ethz/covvfit/issues)!
 In this manner, other users can also benefit from your insights.
 
-**Is there a manuscript describing the method?**
+**Is there a manuscript associated with the tool?**
 
 The manuscript is being finalised. We hope to release the preprint describing the method in February 2025.
+In case you would like to cite *Covvfit* in your work, we would recommend the following for now:
+
+D. Dreifuss, P. Czyż, N. Beerenwinkel, *Learning and forecasting selection dynamics of SARS-CoV-2 variants from wastewater sequencing data using Covvfit* (2025; in preparation). URL: https://github.com/cbg-ethz/covvfit

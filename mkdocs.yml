@@ -39,7 +39,7 @@ plugins:
 nav:
   - Overview: index.md
   - Command line workflow: cli.md
-  - API Reference: api.md
+  - API Reference: api/index.md
   - Statistical models: models.md
 
 repo_name: covvfit
