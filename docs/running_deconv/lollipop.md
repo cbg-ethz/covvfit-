@@ -1,55 +1,58 @@
-# Prepare deconvolved data for covvfit
+# Prepare deconvoluted data with *LolliPop* for *Covvfit* 
 
-Here we explain how to prepare input for covvfit. We need to deconvolve wastewater data with _LolliPop_, but we need to do it without smoothing (or with minimal smoothing) to avoid biases due to biases in kernel smoothers. 
+Here we explain how to prepare input for *Covvfit* using the [*LolliPop*](https://github.com/cbg-ethz/LolliPop) tool.
 
-## Install LolliPop
+We need to deconvolute wastewater data with *LolliPop*, but we need to do it without smoothing (or with minimal smoothing) to avoid introducing bias by kernel smoothing procedures.
 
-Follow installation detailed here https://github.com/cbg-ethz/LolliPop 
+## Install *LolliPop*
+
+Follow installation instructions described [here](https://github.com/cbg-ethz/LolliPop). They consist of the following: 
 
 Create environment:
-```console
+```bash
 conda create -n lollipop 
 conda activate lollipop
 ```
 
-Clone repo:
-```console
+Clone repository:
+
+```bash
 git clone https://github.com/cbg-ethz/LolliPop.git
 cd LolliPop
 ```
 
 Install dependencies:
-```console
+```bash
 pip install '.[cli]'
 ```
 
 ## Get and prepare data
 
-Make a dir for our results:
+Make a directory for deconvolution results:
 
-```console
+```bash
 mkdir lollipop_covvfit
 cd lollipop_covvfit
 ```
 
-Get mutation data from euler:
+Obtain mutation data, for example from Euler:
 
-```console
+```bash
 rsync -avz --progress euler:/cluster/project/pangolin/work-vp-test/variants/tallymut.tsv.zst .
 zstd -d tallymut.tsv.zst 
 ```
 
-Get latest config files from euler:
+Obtain the latest configuration files from euler:
 
-```console
+```bash
 rsync -avz --progress euler:/cluster/project/pangolin/work-vp-test/var_dates.yaml .
 rsync -avz --progress euler:/cluster/project/pangolin/work-vp-test/variant_config.yaml .
 rsync -avz --progress euler:/cluster/project/pangolin/work-vp-test/ww_locations.tsv .
 rsync -avz --progress euler:/cluster/project/pangolin/work-vp-test/filters_badmut.yaml .
 ```
 
-Prepare parameters for the deconv
-```console
+Prepare parameters for the deconvolution:
+```bash
 cat << EOF > deconv_config.yaml
 bootstrap: 0
 
@@ -65,11 +68,11 @@ deconv_params:
 EOF
 ```
 
-## Run LolliPop
+## Run *LolliPop*
 
-Run:
+To deconvolve the data, run:
 
-```console
+```bash
 cd ..
 ldata="./lollipop_covvfit"
 lollipop deconvolute $ldata/tallymut.tsv \
@@ -82,9 +85,6 @@ lollipop deconvolute $ldata/tallymut.tsv \
     --n-cores=2
 ```
 
-## Run CovvFit 
+## Run *CovvFit* 
 
-Run the notebook. 
-
-
-
+You are ready to use *Covvfit* and can proceed to the tutorial [here](../cli.md).  
