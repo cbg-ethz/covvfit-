@@ -28,3 +28,5 @@ covvfit.numeric.some_function()
 ::: covvfit.numeric.log_matrix
 
 ::: covvfit.numeric.log1mexp
+
+::: covvfit.numeric.logsumexp_excluding_column
