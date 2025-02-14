@@ -24,14 +24,18 @@ def test_logsumexp_excluding_column_standard(shape, axis):
     the simple implementation is stable."""
     rng = np.random.default_rng(42)
 
-    if axis > len(shape):
+    if axis >= len(shape):
         return
 
     y = rng.normal(size=shape)
-    out = numeric.logsumexp_excluding_column(y)
-    exp = logsumexp_excluding_column_simple(y)
-
+    out = numeric.logsumexp_excluding_column(y, axis=axis)
+    exp = logsumexp_excluding_column_simple(y, axis=axis)
     npt.assert_allclose(out, exp, rtol=0.01, atol=1e-3)
+
+    # Check default for the `axis` argument
+    out2 = numeric.logsumexp_excluding_column(y)
+    exp2 = logsumexp_excluding_column_simple(y)
+    npt.assert_allclose(out2, exp2, rtol=0.01, atol=1e-3)
 
 
 def test_logsumexp_excluding_column_hard():
