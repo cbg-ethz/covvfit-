@@ -3,6 +3,7 @@ import dataclasses
 import jax
 import jax.numpy as jnp
 import numpy as np
+from jax.scipy.special import logsumexp
 from jaxtyping import Array, Float
 from scipy import optimize
 
@@ -41,6 +42,53 @@ def log1mexp(x: Float[Array, " *shape"]) -> Float[Array, " *shape"]:
     """
     x = jnp.minimum(x, -jnp.finfo(x.dtype).eps)
     return jnp.where(x > -0.693, jnp.log(-jnp.expm1(x)), jnp.log1p(-jnp.exp(x)))
+
+
+def logsumexp_excluding_column(
+    y: Float[Array, "*batch variants"],
+    axis: int = -1,
+) -> Float[Array, "*batch variants"]:
+    """
+    Compute logsumexp across the given axis for each element, excluding
+    the 'current' element at that axis index.
+
+    Args:
+        y: An array of shape [..., variants, ...].
+        axis: The axis along which we exclude each index before computing
+              logsumexp.
+
+    Returns:
+        An array of the same shape as `y`, whose element at index i along
+        `axis` is the log-sum-exp of all other entries (j != i).
+    """
+    # Number of elements along the specified axis
+    n = y.shape[axis]
+    dtype = y.dtype
+
+    # This function will exclude the i-th entry along `axis` by masking it.
+    def exclude_index(i: int) -> jnp.ndarray:
+        # Create a 1D mask of length n: True for j != i, False for j == i
+        mask_1d = jnp.arange(n) != i
+
+        # Reshape it so it can broadcast along the desired `axis`
+        # e.g., if y.ndim=3 and axis=1, shape might be (1, n, 1)
+        mask_shape = [1] * y.ndim
+        mask_shape[axis] = n
+        mask_1d = mask_1d.reshape(mask_shape)
+
+        # Replace the excluded positions with -∞
+        masked_y = jnp.where(mask_1d, y, jnp.finfo(dtype).min)
+
+        # Compute logsumexp over the masked array along `axis`
+        return logsumexp(masked_y, axis=axis)
+
+    # Vectorize over each index (0...n-1) in the chosen axis
+    # This produces a new array with shape=(n, [all the other axes]).
+    results = jax.vmap(exclude_index)(jnp.arange(n))
+
+    # Move the new axis (of length n) back to `axis`, matching the original shape of y
+    results = jnp.moveaxis(results, 0, axis)
+    return results
 
 
 @dataclasses.dataclass
