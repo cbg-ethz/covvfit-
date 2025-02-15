@@ -1,6 +1,8 @@
-site_name: Inference of SARS-Cov-2 variant fitness
+site_name: "Inference of variant fitness with Covvfit"
 
 theme:
+  icon:
+    logo: fontawesome/solid/virus-covid
   name: "material"
   features:
     - navigation.tabs

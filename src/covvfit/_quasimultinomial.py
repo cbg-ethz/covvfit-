@@ -9,6 +9,7 @@ import numpyro
 import numpyro.distributions as distrib
 from jaxtyping import Array, Bool, Float
 
+import covvfit._numeric as numeric
 from covvfit._numeric import OptimizeMultiResult, jax_multistart_minimize
 from covvfit._padding import create_padded_array
 
@@ -363,36 +364,6 @@ def get_softmax_predictions(
     return y_softmax
 
 
-def _logsumexp_excluding_column(
-    y: Float[Array, "*batch variants"],
-    axis: int = -1,
-) -> Float[Array, "*batch variants"]:
-    """
-    Compute logsumexp across the "variants" dimension for each column,
-    excluding the current column.
-
-    Args:
-        y_linear: a NumPy array.
-        axis: the axis representing variants, over which excluded logsumexp
-            will be performed
-
-    Returns:
-        an array of the same shape, where the `i`th element of the axis
-        corresponds to the logsum exp over all the other entries except
-        this one
-    """
-    # Numerical stability by shifting with max_val
-    max_val = jnp.max(y, axis=axis, keepdims=True)
-    shifted = y - max_val
-    # Compute sum exp shifted,
-    # Substract sum exp shifted for each column
-    # Take the log and add back the max_val
-    sum_exp_shifted = jnp.sum(jnp.exp(shifted), axis=axis, keepdims=True)
-    logsumexp_excl = jnp.log(sum_exp_shifted - jnp.exp(shifted)) + max_val
-
-    return logsumexp_excl
-
-
 def get_logit_predictions(
     theta: ModelParameters,
     n_variants: int,
@@ -416,7 +387,7 @@ def get_logit_predictions(
         growths=growths,
     )
 
-    return y_linear - _logsumexp_excluding_column(y_linear)
+    return y_linear - numeric.logsumexp_excluding_column(y_linear)
 
 
 def construct_theta0(
